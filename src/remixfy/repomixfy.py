@@ -62,6 +62,7 @@ class RepoMixfy:
         "_max_bytes",
         "_fences_map",
         "_repomixfy_path",
+        "_ignored_path",
     )
 
     def __init__(
@@ -97,6 +98,7 @@ class RepoMixfy:
         self._fences_map: dict = fences_map or {}
 
         self._repomixfy_path: Path = self._output_dir / ".repomixfy"
+        self._ignored_path: Path = self._output_dir / ".ignored"
 
         clone_repository(
             self._url,
@@ -216,6 +218,7 @@ class RepoMixfy:
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
         file_paths: list[str] = []
+        ignored_paths: list[str] = []
 
         for root, dirs, files in os.walk(self._repo_dir):
             root_path = Path(root)
@@ -232,12 +235,14 @@ class RepoMixfy:
                 rel_path = file_path.relative_to(self._repo_dir)
 
                 if self._is_dir_ignored(rel_path.parts[:-1]):
+                    ignored_paths.append(rel_path.as_posix())
                     continue
 
                 if any(
                     file == pat or fnmatch.fnmatch(file, pat)
                     for pat in self._ignore_files
                 ):
+                    ignored_paths.append(rel_path.as_posix())
                     continue
 
                 suffix = file_path.suffix
@@ -246,19 +251,30 @@ class RepoMixfy:
                     suffix = suffix.lower()
 
                 if suffix in self._ignore_ext:
+                    ignored_paths.append(rel_path.as_posix())
                     continue
 
                 file_paths.append(rel_path.as_posix())
 
         file_paths.sort()
+        ignored_paths.sort()
 
         with self._repomixfy_path.open("w", encoding="utf-8") as f:
             for rel_path in file_paths:
                 f.write(f"{rel_path}\n")
 
+        with self._ignored_path.open("w", encoding="utf-8") as f:
+            for rel_path in ignored_paths:
+                f.write(f"{rel_path}\n")
+
         logging.info(
             f"Created .repomixfy with {len(file_paths)} files at "
             f"{self._repomixfy_path}"
+        )
+
+        logging.info(
+            f"Created .ignored with {len(ignored_paths)} files at "
+            f"{self._ignored_path}"
         )
 
     def _format_file_block(
