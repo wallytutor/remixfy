@@ -1,1 +1,5 @@
+# Any sandbox:
+*sandbox*
+
+# Python byte-code cache:
 __pycache__/

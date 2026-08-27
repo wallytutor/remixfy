@@ -12,7 +12,8 @@ from subprocess import run
 
 from .tools import (
     is_text_file,
-    repository_name,
+    resolve_repo_dir,
+    resolve_output_dir,
 )
 
 class RepoMixfy:
@@ -47,8 +48,8 @@ class RepoMixfy:
 
         self._url: str = url
         self._branch: str = branch
-        self._repo_dir: Path = self._resolve_repo_dir(repo_dir)
-        self._output_dir: Path = self._resolve_output_dir(output_dir)
+        self._repo_dir: Path = resolve_repo_dir(url, repo_dir)
+        self._output_dir: Path = resolve_output_dir(url, output_dir)
         self._ignore_files: list[str] = ignore_files or []
         self._ignore_dirs: list[str] = ignore_dirs or []
         self._ignore_ext: set[str] = ignore_ext
@@ -61,32 +62,6 @@ class RepoMixfy:
         self._init_outputs(force_write)
         self._init_files(case_sensitive_ext)
         self._process_files()
-
-    def _resolve_repo_dir(self, repo_dir) -> Path:
-        if not repo_dir:
-            repo_dir = repository_name(self._url)
-
-        repo_dir = self._resolve_dir(repo_dir)
-        logging.info(f"Repository at {repo_dir}")
-        return repo_dir
-
-    def _resolve_output_dir(self, output_dir) -> Path:
-        if not output_dir:
-            output_dir = self._repo_dir.name + "_mix"
-
-        output_dir = self._resolve_dir(output_dir)
-        logging.info(f"Output at {output_dir}")
-        return output_dir
-
-    def _resolve_dir(self, tmp_dir) -> Path:
-        if isinstance(tmp_dir, str):
-            tmp_dir = Path(tmp_dir)
-
-        if not tmp_dir.is_absolute():
-            tmp_dir = Path.cwd().joinpath(tmp_dir)
-
-
-        return tmp_dir
 
     def _is_dir_ignored(self, dir_parts: tuple[str, ...]) -> bool:
         """ Check if directory parts match any rule in _ignore_dirs. """
