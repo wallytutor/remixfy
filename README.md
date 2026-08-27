@@ -97,3 +97,7 @@ repomixfy:
     .cxx: c++
     .h: c++
 ```
+
+## 📃 To-Do
+
+- [ ] Implement a sample case using the functional form of a fence map (text processing function) and document it. That might be the extraction of headers from OpenFOAM files.

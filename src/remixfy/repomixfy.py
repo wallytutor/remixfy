@@ -79,20 +79,21 @@ class RepoMixfy:
             fences_map: dict | None = None,
             base_dir: str | Path | None = None,
         ) -> None:
+        def resolver(f, path):
+            return f(path, url=url, base=base_dir)
+
         ignore_ext = get_extensions(ignore_ext, case_sensitive_ext)
 
         self._url: str = url
         self._branch: str = branch
-        self._repo_dir: Path = resolve_repo_dir(
-            repo_dir, url=url, base=base_dir
-        )
-        self._output_dir: Path = resolve_output_dir(
-            output_dir, url=url, base=base_dir
-        )
+
+        self._repo_dir: Path = resolver(resolve_repo_dir, repo_dir)
+        self._output_dir: Path = resolver(resolve_output_dir, output_dir)
+
+        self._max_bytes: int = int(size_max * 1024 ** 2)
         self._ignore_files: list[str] = ignore_files or []
         self._ignore_dirs: list[str] = ignore_dirs or []
         self._ignore_ext: set[str] = ignore_ext
-        self._max_bytes: int = int(size_max * 1024 ** 2)
         self._fences_map: dict = fences_map or {}
 
         self._repomixfy_path: Path = self._output_dir / ".repomixfy"
@@ -283,39 +284,37 @@ class RepoMixfy:
             Formatted markdown block string, or None if reading or
             processing failed.
         """
-        try:
-            content = file_path.read_text(
-                encoding="utf-8", errors="replace"
-            )
-        except Exception as err:
-            logging.warning(f"Failed to read {file_path}: {err}")
-            return None
-
-        if callable(fence_val):
+        if not callable(fence_val):
             try:
-                processed = fence_val(content)
-            except TypeError:
-                processed = fence_val(content, file_path)
-
-            if not isinstance(processed, str):
+                content = file_path.read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            except Exception as err:
+                logging.warning(f"Failed to read {file_path}: {err}")
                 return None
 
-            if (
-                processed.startswith("`")
-                or processed.startswith("#")
-                or processed.startswith("File:")
-            ):
-                return f"{processed}\n\n"
-            else:
-                return (
-                    f"## File: {rel_str}\n\n"
-                    f"```text\n{processed}\n```\n\n"
-                )
-        else:
             return (
                 f"## File: {rel_str}\n\n"
                 f"```{str(fence_val)}\n{content}\n```\n\n"
             )
+
+        try:
+            processed = fence_val(file_path)
+
+            if not isinstance(processed, str):
+                logging.warning(
+                    f"Callable fence_val for {file_path} did not "
+                    f"return a string: {type(processed).__name__}"
+                )
+                return None
+        except Exception as err:
+            logging.warning(
+                f"Callable fence_val for {file_path} raised an "
+                f"exception: {err}"
+            )
+            return None
+
+        return f"## File: {rel_str}\n\n{processed}\n\n"
 
     def _process_files(self) -> None:
         """ Process all listed files into chunked markdown files. """

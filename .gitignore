@@ -1,5 +1,11 @@
 # Any sandbox:
 *sandbox*
 
+# Virtual environment:
+.venv/
+
 # Python byte-code cache:
 __pycache__/
+
+# Pytest:
+.pytest_cache/
