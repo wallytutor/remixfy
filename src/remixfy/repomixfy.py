@@ -8,9 +8,10 @@ import shutil
 import sys
 
 from pathlib import Path
-from subprocess import run
 
 from .tools import (
+    clone_repository,
+    get_extensions,
     is_text_file,
     resolve_repo_dir,
     resolve_output_dir,
@@ -46,7 +47,7 @@ class RepoMixfy:
             force_write: bool = False,
             base_dir: str | Path | None = None,
         ) -> None:
-        ignore_ext = self._get_extensions(ignore_ext, case_sensitive_ext)
+        ignore_ext = get_extensions(ignore_ext, case_sensitive_ext)
 
         self._url: str = url
         self._branch: str = branch
@@ -64,7 +65,13 @@ class RepoMixfy:
 
         self._repomixfy_path: Path = self._output_dir / ".repomixfy"
 
-        self._init_clone()
+        clone_repository(
+            self._url,
+            self._branch,
+            self._repo_dir,
+            base=base_dir,
+        )
+
         self._init_outputs(force_write)
         self._init_files(case_sensitive_ext)
         self._process_files()
@@ -120,38 +127,6 @@ class RepoMixfy:
                             return True
 
         return False
-
-    def _get_extensions(self, ignores, case_sensitive) -> set[str]:
-        if ignores is None:
-            return set()
-
-        # Ensure that all extensions start with a dot.
-        ignores = {e if e.startswith(".") else f".{e}" for e in ignores}
-
-        # If case insensitive, convert all extensions to lowercase.
-        if not case_sensitive:
-            ignores = {e.lower() for e in ignores}
-
-        return ignores
-
-    def _init_clone(self) -> None:
-        """ Initialize clone of the repository. """
-        if self._repo_dir.exists() and self._repo_dir.is_dir():
-            logging.info(f"Repository already cloned at {self._repo_dir}")
-            return
-
-        run(
-            [
-                "git",
-                "clone",
-                "--branch",
-                self._branch,
-                self._url,
-                self._repo_dir
-            ],
-            check=True,
-            capture_output=True
-        )
 
     def _init_outputs(self, force_write) -> None:
         if self._repomixfy_path.exists():

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import logging
+import subprocess
 
 from pathlib import Path
 
@@ -81,3 +82,43 @@ def is_text_file(
         return True
     except UnicodeDecodeError:
         return False
+
+
+def get_extensions(ignores, case_sensitive) -> set[str]:
+    if ignores is None:
+        return set()
+
+    # Ensure that all extensions start with a dot.
+    ignores = {e if e.startswith(".") else f".{e}" for e in ignores}
+
+    # If case insensitive, convert all extensions to lowercase.
+    if not case_sensitive:
+        ignores = {e.lower() for e in ignores}
+
+    return ignores
+
+
+def clone_repository(
+        url: str,
+        branch: str | None = None,
+        repo_dir: str | Path | None = None,
+        base: str | Path | None = None
+    ) -> None:
+    """ Initialize clone of the repository. """
+    repo_dir = resolve_repo_dir(repo_dir, url=url, base=base)
+
+    if repo_dir.exists() and repo_dir.is_dir():
+        logging.info(f"Repository already cloned at {repo_dir}")
+        return
+
+    cmd = ["git", "clone"]
+
+    if branch:
+        cmd.extend(["--branch", branch])
+
+    cmd.append(url)
+
+    if repo_dir:
+        cmd.append(str(repo_dir))
+
+    subprocess.run(cmd, check=True, capture_output=True)
