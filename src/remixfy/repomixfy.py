@@ -8,6 +8,7 @@ import shutil
 import sys
 
 from pathlib import Path
+from typing import Any
 
 from .tools import (
     clone_repository,
@@ -19,6 +20,37 @@ from .tools import (
 
 
 class RepoMixfy:
+    """ Handles the processing of a single repository into output files.
+
+    Parameters
+    ----------
+    url : str
+        Git repository URL to clone.
+    branch : str, optional
+        Git branch to check out during clone.
+    repo_dir : str, Path, or None, optional
+        Destination directory path for the cloned repository.
+    output_dir : str, Path, or None, optional
+        Destination directory path for the generated output files.
+    size_max : float, optional
+        Maximum size of output files in MB.
+    case_sensitive_ext : bool, optional
+        Whether file extension matching should be case-sensitive.
+    force_write : bool, optional
+        Whether to allow overwriting of outputs directory.
+    ignore_files : list[str], optional
+        List of file names to ignore.
+    ignore_dirs : list[str], optional
+        List of directory names to ignore.
+    ignore_ext : list[str], optional
+        List of file extensions to ignore.
+    fences_map : dict, optional
+        Map of fences to use for chunking. Key: file extension (with
+        leading dot), Value: fence name
+    base_dir : str, Path, or None, optional
+        Base directory for relative path resolution.
+    """
+
     __slots__ = (
         "_url",
         "_branch",
@@ -38,13 +70,13 @@ class RepoMixfy:
             branch: str = "main",
             repo_dir: str | Path | None = None,
             output_dir: str | Path | None = None,
+            size_max: float = 2.0,
+            case_sensitive_ext: bool = False,
+            force_write: bool = False,
             ignore_files: list[str] | None = None,
             ignore_dirs: list[str] | None = None,
             ignore_ext: list[str] | None = None,
             fences_map: dict | None = None,
-            size_max: float = 2.0,
-            case_sensitive_ext: bool = False,
-            force_write: bool = False,
             base_dir: str | Path | None = None,
         ) -> None:
         ignore_ext = get_extensions(ignore_ext, case_sensitive_ext)
@@ -77,7 +109,18 @@ class RepoMixfy:
         self._process_files()
 
     def _is_dir_ignored(self, dir_parts: tuple[str, ...]) -> bool:
-        """ Check if directory parts match any rule in _ignore_dirs. """
+        """ Check if directory must be ignored.
+
+        Parameters
+        ----------
+        dir_parts : tuple of str
+            Path components relative to repository root.
+
+        Returns
+        -------
+        bool
+            True if the directory is ignored, False otherwise.
+        """
         if not dir_parts or not self._ignore_dirs:
             return False
 
@@ -128,7 +171,15 @@ class RepoMixfy:
 
         return False
 
-    def _init_outputs(self, force_write) -> None:
+    def _init_outputs(self, force_write: bool) -> None:
+        """ Initialize output directory state.
+
+        Parameters
+        ----------
+        force_write : bool
+            If True, remove existing output directory before proceeding;
+            if False and output file exists, exit process.
+        """
         if self._repomixfy_path.exists():
             if force_write:
                 logging.info(
@@ -143,8 +194,19 @@ class RepoMixfy:
                 )
                 sys.exit(0)
 
-    def _init_files(self, case_sensitive_ext) -> None:
-        """ Initialize .repomixfy file with repository files list. """
+    def _init_files(self, case_sensitive_ext: bool) -> None:
+        """ Scan repository files and write list of non-ignored files.
+
+        Parameters
+        ----------
+        case_sensitive_ext : bool
+            Whether file extension matching should be case-sensitive.
+
+        Raises
+        ------
+        FileNotFoundError
+            If repository directory does not exist.
+        """
         if not self._repo_dir.exists():
             raise FileNotFoundError(
                 f"Repository directory not found at {self._repo_dir}"
@@ -198,40 +260,89 @@ class RepoMixfy:
             f"{self._repomixfy_path}"
         )
 
+    def _format_file_block(
+            self,
+            rel_str: str,
+            file_path: Path,
+            fence_val: Any
+        ) -> str | None:
+        """ Format a single source file into a markdown fenced block.
+
+        Parameters
+        ----------
+        rel_str : str
+            Relative file path string.
+        file_path : Path
+            Absolute file path.
+        fence_val : str or callable
+            Language string or transformer function for the file content.
+
+        Returns
+        -------
+        str or None
+            Formatted markdown block string, or None if reading or
+            processing failed.
+        """
+        try:
+            content = file_path.read_text(
+                encoding="utf-8", errors="replace"
+            )
+        except Exception as err:
+            logging.warning(f"Failed to read {file_path}: {err}")
+            return None
+
+        if callable(fence_val):
+            try:
+                processed = fence_val(content)
+            except TypeError:
+                processed = fence_val(content, file_path)
+
+            if not isinstance(processed, str):
+                return None
+
+            if (
+                processed.startswith("`")
+                or processed.startswith("#")
+                or processed.startswith("File:")
+            ):
+                return f"{processed}\n\n"
+            else:
+                return (
+                    f"## File: {rel_str}\n\n"
+                    f"```text\n{processed}\n```\n\n"
+                )
+        else:
+            return (
+                f"## File: {rel_str}\n\n"
+                f"```{str(fence_val)}\n{content}\n```\n\n"
+            )
+
     def _process_files(self) -> None:
-        """ Process files listed in .repomixfy into markdown chunks. """
+        """ Process all listed files into chunked markdown files. """
         if not self._repomixfy_path.exists():
             logging.warning(
                 f".repomixfy file missing at {self._repomixfy_path}"
             )
             return
 
-
-        for old_md in self._output_dir.glob(f"{self._repo_dir.name}-*.md"):
-            try:
-                old_md.unlink()
-            except OSError:
-                pass
-
         with self._repomixfy_path.open("r", encoding="utf-8") as f:
-            lines = f.readlines()
+            lines = [line.strip() for line in f if line.strip()]
+
+        if not lines:
+            return
 
         n_lines = len(lines)
         fmt_digits = max(1, int(math.ceil(math.log10(n_lines))))
 
-        def output_name(current_id) -> Path:
-            file_name = f"{self._repo_dir.name}-{current_id:0{fmt_digits}d}.md"
+        def output_name(current_id: int) -> Path:
+            file_numb = f"{current_id:0{fmt_digits}d}"
+            file_name = f"{self._repo_dir.name}-{file_numb}.md"
             return self._output_dir / file_name
 
         current_id = 1
         current_md_path = output_name(current_id)
 
-        for line in lines:
-            rel_str = line.strip()
-
-            if not rel_str:
-                continue
-
+        for rel_str in lines:
             file_path = self._repo_dir / rel_str
 
             if not file_path.exists() or not file_path.is_file():
@@ -244,48 +355,15 @@ class RepoMixfy:
                 )
                 continue
 
-            ext = file_path.suffix
-
-            if ext not in self._fences_map:
+            if (ext := file_path.suffix) not in self._fences_map:
                 continue
 
-            fence_val = self._fences_map[ext]
+            block = self._format_file_block(
+                rel_str, file_path, self._fences_map[ext]
+            )
 
-            try:
-                content = file_path.read_text(
-                    encoding="utf-8", errors="replace"
-                )
-            except Exception as err:
-                logging.warning(f"Failed to read {file_path}: {err}")
+            if block is None:
                 continue
-
-            if callable(fence_val):
-                try:
-                    processed = fence_val(content)
-                except TypeError:
-                    processed = fence_val(content, file_path)
-
-                if isinstance(processed, str):
-                    if (
-                        processed.startswith("`")
-                        or processed.startswith("#")
-                        or processed.startswith("File:")
-                    ):
-                        block = f"{processed}\n\n"
-                    else:
-                        block = (
-                            f"## File: {rel_str}\n\n"
-                            f"```{lang}\n{processed}\n```\n\n"
-                        )
-                else:
-                    continue
-
-            else:
-                lang = str(fence_val)
-                block = (
-                    f"## File: {rel_str}\n\n"
-                    f"```{lang}\n{content}\n```\n\n"
-                )
 
             if current_md_path.exists():
                 if current_md_path.stat().st_size >= self._max_bytes:

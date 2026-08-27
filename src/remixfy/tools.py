@@ -11,6 +11,28 @@ def resolve_repo_dir(
         url: str | None = None,
         base: str | Path | None = None
     ) -> Path:
+    """ Resolve the repository directory path.
+
+    Parameters
+    ----------
+    repo_dir : str, Path, or None
+        Target directory path for the repository.
+    url : str, optional
+        Repository URL used to infer the repository name
+        if `repo_dir` is None.
+    base : str, Path, or None, optional
+        Base directory to resolve relative paths against.
+
+    Returns
+    -------
+    Path
+        Resolved path for the repository directory.
+
+    Raises
+    ------
+    ValueError
+        If neither `repo_dir` nor `url` is provided.
+    """
     if not repo_dir and not url:
         raise ValueError("Must provide repo_dir or url")
 
@@ -25,6 +47,28 @@ def resolve_output_dir(
         url: str | None = None,
         base: str | Path | None = None
     ) -> Path:
+    """ Resolve the output directory path.
+
+    Parameters
+    ----------
+    output_dir : str, Path, or None
+        Target directory path for generated output.
+    url : str, optional
+        Repository URL used to infer the default output folder
+        name if `output_dir` is None.
+    base : str, Path, or None, optional
+        Base directory to resolve relative paths against.
+
+    Returns
+    -------
+    Path
+        Resolved path for the output directory.
+
+    Raises
+    ------
+    ValueError
+        If neither `output_dir` nor `url` is provided.
+    """
     if not output_dir and not url:
         raise ValueError("Must provide output_dir or url")
 
@@ -38,25 +82,54 @@ def resolve_dir(
         name: str | Path | None,
         base: str | Path | None = None
     ) -> Path:
-    if name is None:
-        name = Path.cwd()
-    elif isinstance(name, str):
-        name = Path(name)
+    """ Resolve a directory path.
 
-    if isinstance(base, str):
-        base = Path(base)
+    Resolution may be relative to a base directory or
+    the current working directory.
+
+    Parameters
+    ----------
+    name : str, Path, or None
+        Path or directory name to resolve. If None, defaults
+        to current working directory.
+    base : str, Path, or None, optional
+        Base directory for relative path resolution.
+
+    Returns
+    -------
+    Path
+        Resolved Path object.
+    """
+    name = name or Path.cwd()
+    base = base or Path.cwd()
+
+    name = Path(name) if isinstance(name, str) else name
+    base = Path(base) if isinstance(base, str) else base
 
     if not name.is_absolute():
-        if base:
-            return base.joinpath(name)
-        else:
-            return Path.cwd().joinpath(name)
+        return base.joinpath(name)
 
     return name
 
 
 def repository_name(url: str) -> str:
-    """ Return the repository name from the URL. """
+    """ Extract the repository name from a Git URL.
+
+    Parameters
+    ----------
+    url : str
+        Git repository URL (must end with '.git').
+
+    Returns
+    -------
+    str
+        Repository name extracted from the URL.
+
+    Raises
+    ------
+    ValueError
+        If `url` does not end with '.git' or is invalid.
+    """
     if not url.endswith(".git"):
         raise ValueError(f"URL must end with .git: {url}")
 
@@ -70,7 +143,21 @@ def is_text_file(
         file_path: str | Path,
         chunk_size: int = 1024
     ) -> bool:
-    """ Return True if the file is a text file. """
+    """ Determine whether a file is likely a text file.
+
+    Parameters
+    ----------
+    file_path : str or Path
+        Path to the file to inspect.
+    chunk_size : int, default=1024
+        Number of bytes to read for text detection.
+
+    Returns
+    -------
+    bool
+        True if the file contains no null bytes and decodes
+        as UTF-8, False otherwise.
+    """
     with open(file_path, "rb") as f:
         chunk = f.read(chunk_size)
 
@@ -85,6 +172,21 @@ def is_text_file(
 
 
 def get_extensions(ignores, case_sensitive) -> set[str]:
+    """ Normalize and filter a collection of file extension rules.
+
+    Parameters
+    ----------
+    ignores : list of str, set of str, or None
+        File extension strings to normalize.
+    case_sensitive : bool
+        If False, convert all extensions to lowercase.
+
+    Returns
+    -------
+    set of str
+        Normalized set of file extensions, each starting with
+        a leading dot.
+    """
     if ignores is None:
         return set()
 
@@ -104,7 +206,26 @@ def clone_repository(
         repo_dir: str | Path | None = None,
         base: str | Path | None = None
     ) -> None:
-    """ Initialize clone of the repository. """
+    """ Clone a remote Git repository to a target directory.
+
+    If the target directory already exists, the repository is not cloned.
+
+    Parameters
+    ----------
+    url : str
+        Git repository URL to clone.
+    branch : str, optional
+        Git branch to check out during clone.
+    repo_dir : str, Path, or None, optional
+        Destination directory path for the cloned repository.
+    base : str, Path, or None, optional
+        Base directory to resolve `repo_dir` against.
+
+    Raises
+    ------
+    subprocess.CalledProcessError
+        If the `git clone` command fails.
+    """
     repo_dir = resolve_repo_dir(repo_dir, url=url, base=base)
 
     if repo_dir.exists() and repo_dir.is_dir():

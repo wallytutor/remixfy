@@ -38,14 +38,28 @@ The following snipped documents the YAML file format:
 
 ```yaml
 repomixfy:
-  # URL point to the repository that will be cloned:
+  # Git repository URL to clone.
   url: https://github.com/OpenFOAM/OpenFOAM-13.git
+
+  # Git branch to check out during clone.
   branch: master
+
+  # Destination directory path for the cloned repository.
   repo_dir: openfoam-13
+
+  # Destination directory path for the generated output files.
   output_dir: openfoam-13_mix
+
+  # Maximum size of output files in MB.
   size_max: 4.0
+
+  # Whether file extension matching should be case-sensitive.
+  case_sensitive_ext: false
+
+  # Whether to allow overwriting of outputs directory.
   force_write: true
 
+  # List of file names to ignore.
   ignore_files:
     - .gitattributes
     - .gitignore
@@ -57,12 +71,14 @@ repomixfy:
     - Allrun
     - Alltest
 
+  # List of directory names to ignore.
   ignore_dirs:
     - .git
     - wmake
     - Make
     - Doxygen
 
+  # List of file extensions to ignore.
   ignore_ext:
     - .pdf
     - .png
@@ -73,6 +89,8 @@ repomixfy:
     - .gz
     - .tar
 
+  # Map of fences to use for chunking. Key: file extension (with
+  # leading dot), Value: fence name
   fences_map:
     .C: c++
     .H: c++
