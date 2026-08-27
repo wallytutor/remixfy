@@ -174,6 +174,70 @@ class RepoMixfy:
 
         return False
 
+    def _is_file_ignored(self, rel_path: Path) -> bool:
+        """ Check if file path must be ignored.
+
+        Parameters
+        ----------
+        rel_path : Path
+            Relative path of the file from repository root.
+
+        Returns
+        -------
+        bool
+            True if the file is ignored, False otherwise.
+        """
+        if not rel_path or not self._ignore_files:
+            return False
+
+        filename = rel_path.name
+        rel_parts = rel_path.parts
+
+        for raw_pattern in self._ignore_files:
+            if not raw_pattern:
+                continue
+
+            normalized_pat = raw_pattern.replace("\\", "/")
+            is_anchored = (
+                normalized_pat.startswith("./")
+                or normalized_pat.startswith(".\\")
+            )
+
+            if is_anchored:
+                pat_str = normalized_pat[2:]
+            else:
+                pat_str = normalized_pat
+
+            pattern = pat_str.strip("/")
+            if not pattern:
+                continue
+
+            pattern_parts = tuple(pattern.split("/"))
+            n = len(pattern_parts)
+
+            if is_anchored:
+                if len(rel_parts) == n:
+                    if all(
+                        s == p or fnmatch.fnmatch(s, p)
+                        for s, p in zip(rel_parts, pattern_parts)
+                    ):
+                        return True
+            else:
+                if n == 1:
+                    pat = pattern_parts[0]
+                    if filename == pat or fnmatch.fnmatch(filename, pat):
+                        return True
+                else:
+                    if len(rel_parts) >= n:
+                        slice_parts = rel_parts[-n:]
+                        if all(
+                            s == p or fnmatch.fnmatch(s, p)
+                            for s, p in zip(slice_parts, pattern_parts)
+                        ):
+                            return True
+
+        return False
+
     def _init_outputs(self, force_write: bool) -> None:
         """ Initialize output directory state.
 
@@ -238,10 +302,7 @@ class RepoMixfy:
                     ignored_paths.append(rel_path.as_posix())
                     continue
 
-                if any(
-                    file == pat or fnmatch.fnmatch(file, pat)
-                    for pat in self._ignore_files
-                ):
+                if self._is_file_ignored(rel_path):
                     ignored_paths.append(rel_path.as_posix())
                     continue
 
@@ -263,19 +324,21 @@ class RepoMixfy:
             for rel_path in file_paths:
                 f.write(f"{rel_path}\n")
 
-        with self._ignored_path.open("w", encoding="utf-8") as f:
-            for rel_path in ignored_paths:
-                f.write(f"{rel_path}\n")
+        if hasattr(self, "_ignored_path") and self._ignored_path:
+            with self._ignored_path.open("w", encoding="utf-8") as f:
+                for rel_path in ignored_paths:
+                    f.write(f"{rel_path}\n")
 
         logging.info(
             f"Created .repomixfy with {len(file_paths)} files at "
             f"{self._repomixfy_path}"
         )
 
-        logging.info(
-            f"Created .ignored with {len(ignored_paths)} files at "
-            f"{self._ignored_path}"
-        )
+        if hasattr(self, "_ignored_path") and self._ignored_path:
+            logging.info(
+                f"Created .ignored with {len(ignored_paths)} files at "
+                f"{self._ignored_path}"
+            )
 
     def _format_file_block(
             self,

@@ -67,7 +67,7 @@ def test_init_files(tmp_path):
     mix._fences_map = {
         ".txt": "text",
         ".py": "python",
-        ".sh": lambda content: f"SHELL:\n{content}"
+        ".sh": lambda file_path: f"SHELL:\n{file_path.read_text(encoding='utf-8')}"
     }
 
     mix._init_files(False)
@@ -134,3 +134,32 @@ repomixfy:
     out_dir = tmp_path / "sample_repo_mix"
     assert out_dir.exists()
     assert (out_dir / ".repomixfy").exists()
+
+
+def test_is_file_ignored():
+    mix = RepoMixfy.__new__(RepoMixfy)
+    mix._ignore_files = [
+        "Allwmake",
+        "polyMesh/cells",
+        "polyMesh/faces",
+        "./root_only.txt",
+    ]
+
+    # Single filename rule anywhere
+    assert mix._is_file_ignored(Path("Allwmake")) is True
+    assert mix._is_file_ignored(Path("src/Allwmake")) is True
+
+    # Relative path rule polyMesh/cells
+    assert mix._is_file_ignored(Path("constant/polyMesh/cells")) is True
+    assert mix._is_file_ignored(Path("polyMesh/cells")) is True
+
+    # Crucial assertion: polyMesh/cells.C must NOT match polyMesh/cells rule!
+    assert mix._is_file_ignored(Path("constant/polyMesh/cells.C")) is False
+    assert mix._is_file_ignored(Path("polyMesh/cells.C")) is False
+    assert mix._is_file_ignored(Path("polyMesh/faces")) is True
+    assert mix._is_file_ignored(Path("polyMesh/faces.H")) is False
+
+    # Anchored file rule ./root_only.txt
+    assert mix._is_file_ignored(Path("root_only.txt")) is True
+    assert mix._is_file_ignored(Path("sub/root_only.txt")) is False
+
