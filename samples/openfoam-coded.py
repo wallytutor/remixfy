@@ -7,10 +7,13 @@ HERE = Path(__file__).parent
 
 
 RepoMixfy(
-    url = "https://github.com/OpenFOAM/OpenFOAM-13.git",
-    branch = "master",
-    repo_dir = HERE / "openfoam-13",
-    output_dir = HERE / "openfoam-13_mix",
+    url         = "https://github.com/OpenFOAM/OpenFOAM-13.git",
+    branch      = "master",
+    repo_dir    = HERE / "openfoam-13",
+    output_dir  = HERE / "openfoam-13_mix",
+    size_max    = 4.0,
+    force_write = True,
+    # --- Lists ---
     ignore_files = [
         ".gitattributes",
         ".gitignore",
@@ -43,5 +46,5 @@ RepoMixfy(
         ".H": "c++",
         ".cxx": "c++",
         ".h": "c++",
-    }
+    },
 )
