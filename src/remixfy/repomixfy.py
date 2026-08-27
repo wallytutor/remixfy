@@ -339,10 +339,17 @@ class RepoMixfy:
             return self._output_dir / file_name
 
         current_id = 1
-        current_md_path = output_name(current_id)
+        current_path = output_name(current_id)
+
+        one_mb = 1024**2
 
         for rel_str in lines:
             file_path = self._repo_dir / rel_str
+
+            if file_path.stat().st_size >= one_mb:
+                # TODO add better controls on how to handle this, e.g.
+                # what is the criteria, should we skip?
+                logging.warning(f"File size exceeds max bytes: {file_path}")
 
             if not file_path.exists() or not file_path.is_file():
                 logging.warning(f"File not found: {file_path}")
@@ -354,22 +361,20 @@ class RepoMixfy:
                 )
                 continue
 
-            if (ext := file_path.suffix) not in self._fences_map:
-                continue
-
+            ext = file_path.suffix
             block = self._format_file_block(
-                rel_str, file_path, self._fences_map[ext]
+                rel_str, file_path, self._fences_map.get(ext, "plain")
             )
 
             if block is None:
                 continue
 
-            if current_md_path.exists():
-                if current_md_path.stat().st_size >= self._max_bytes:
+            if current_path.exists():
+                if current_path.stat().st_size >= self._max_bytes:
                     current_id += 1
-                    current_md_path = output_name(current_id)
+                    current_path = output_name(current_id)
 
-            with current_md_path.open("a", encoding="utf-8") as out:
+            with current_path.open("a", encoding="utf-8") as out:
                 out.write(block)
 
         logging.info(

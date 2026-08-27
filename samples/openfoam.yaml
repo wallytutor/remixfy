@@ -14,8 +14,26 @@ repomixfy:
     - Allwclean
     - Allmake
     - Allclean
-    - Allrun
     - Alltest
+
+    # Keep all run, as it provides indications on how to use tools.
+    # - Allrun
+
+    # Large file at tutorials/XiFluid/kivaTest/otape17:
+    - otape17
+
+    # Just coordinates of particles:
+    - cloudPositions
+
+    # tutorials\shockFluid\biconic25-55Run35\constant:
+    - grid256.dat
+
+    # Some provided polyMesh data:
+    - polyMesh/cells
+    - polyMesh/faces
+    - polyMesh/owner
+    - polyMesh/neighbour
+    - polyMesh/points
 
   ignore_dirs:
     - .git
@@ -29,6 +47,10 @@ repomixfy:
     - .jpg
     - .jpeg
     - .gif
+    - .stl
+    - .obj
+    - .msh
+    - .unv
     - .svg
     - .gz
     - .tar
