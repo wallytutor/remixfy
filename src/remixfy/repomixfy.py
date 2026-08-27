@@ -16,6 +16,7 @@ from .tools import (
     resolve_output_dir,
 )
 
+
 class RepoMixfy:
     __slots__ = (
         "_url",
@@ -43,13 +44,18 @@ class RepoMixfy:
             size_max: float = 2.0,
             case_sensitive_ext: bool = False,
             force_write: bool = False,
+            base_dir: str | Path | None = None,
         ) -> None:
         ignore_ext = self._get_extensions(ignore_ext, case_sensitive_ext)
 
         self._url: str = url
         self._branch: str = branch
-        self._repo_dir: Path = resolve_repo_dir(url, repo_dir)
-        self._output_dir: Path = resolve_output_dir(url, output_dir)
+        self._repo_dir: Path = resolve_repo_dir(
+            repo_dir, url=url, base=base_dir
+        )
+        self._output_dir: Path = resolve_output_dir(
+            output_dir, url=url, base=base_dir
+        )
         self._ignore_files: list[str] = ignore_files or []
         self._ignore_dirs: list[str] = ignore_dirs or []
         self._ignore_ext: set[str] = ignore_ext

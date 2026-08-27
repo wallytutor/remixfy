@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 from pathlib import Path
-from remixfy import RepoMixfy, repository_name
+from remixfy import RepoMixfy, repository_name, main
 
 
 def test_repository_name():
@@ -62,15 +62,16 @@ def test_init_files():
         mix._ignore_files = ignore_files
         mix._ignore_dirs = ignore_dirs
         mix._ignore_ext = ignore_ext
+        mix._repomixfy_path = repo_dir / ".repomixfy"
 
-        mix._size_max = 2.0
+        mix._max_bytes = int(2.0 * 1024 ** 2)
         mix._fences_map = {
             ".txt": "text",
             ".py": "python",
             ".sh": lambda content: f"SHELL:\n{content}"
         }
 
-        mix._init_files()
+        mix._init_files(False)
 
         repomixfy_file = repo_dir / ".repomixfy"
         assert repomixfy_file.exists()
@@ -89,10 +90,69 @@ def test_init_files():
         assert "SHELL:\nsh" in md_text
 
 
+def test_main():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        repo_dir = tmp_path / "my_repo"
+        repo_dir.mkdir()
+        (repo_dir / "app.py").write_text("print('hello')", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        yaml_content = f"""
+repomixfy:
+  url: "https://github.com/user/my_repo.git"
+  repo_dir: "my_repo"
+  output_dir: "my_output"
+  fences_map:
+    .py: python
+"""
+        config_file.write_text(yaml_content, encoding="utf-8")
+
+        main(["--config", str(config_file)])
+
+        out_dir = tmp_path / "my_output"
+        assert out_dir.exists()
+        repomixfy_file = out_dir / ".repomixfy"
+        assert repomixfy_file.exists()
+        md_file = out_dir / "my_repo-1.md"
+        assert md_file.exists()
+        assert "app.py" in md_file.read_text(encoding="utf-8")
+
+
+def test_main_default_dirs():
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        repo_dir = tmp_path / "sample_repo"
+        repo_dir.mkdir()
+        (repo_dir / "code.py").write_text("x = 1", encoding="utf-8")
+
+        config_file = tmp_path / "config.yaml"
+        yaml_content = f"""
+repomixfy:
+  url: "https://github.com/user/sample_repo.git"
+  fences_map:
+    .py: python
+"""
+        config_file.write_text(yaml_content, encoding="utf-8")
+
+        main(["-c", str(config_file)])
+
+        out_dir = tmp_path / "sample_repo_mix"
+        assert out_dir.exists()
+        assert (out_dir / ".repomixfy").exists()
+
+
 def tests():
     test_repository_name()
     test_init_files()
+    test_main()
+    test_main_default_dirs()
 
 
 if __name__ == "__main__":
     tests()
+
