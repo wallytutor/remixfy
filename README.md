@@ -28,10 +28,12 @@ uv sync
 
 ## 🤷‍♂️ Usage
 
+### `repomixfy`
+
 Samples are provided under [samples/](./samples/) directory. One can use the package directly from Python or use the CLI (recommended) as follows:
 
 ```bash
-uv run remixfy --config '<path/to/repo.yaml>'
+uv run repomixfy --config '<path/to/repo.yaml>'
 ```
 
 The following snipped documents the YAML file format:
@@ -97,6 +99,10 @@ repomixfy:
     .cxx: c++
     .h: c++
 ```
+
+### `pagetree`
+
+*WiP*
 
 ## 📃 To-Do
 

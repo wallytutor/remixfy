@@ -13,7 +13,8 @@ name = "Walter Dal'Maz Silva"
 email = "walter.dalmazsilva@gmail.com"
 
 [project.scripts]
-remixfy = "remixfy:main"
+repomixfy = "remixfy.repomixfy:main"
+pagetree = "remixfy.pagetree:main"
 
 [project.optional-dependencies]
 test = [

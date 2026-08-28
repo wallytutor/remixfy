@@ -1,0 +1,7 @@
+pagetree:
+  url: https://doc.cfd.direct/openfoam/user-guide-v13/contents
+  parent: https://doc.cfd.direct/openfoam/user-guide-v13/
+
+  relative_links: true
+  output_dir: openfoam-guide-v13_mix
+  force_write: true
