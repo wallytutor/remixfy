@@ -119,7 +119,7 @@ class RepoMixfy:
         self._init_files(case_sensitive_ext)
         self._process_files()
 
-    def _is_dir_ignored(self, dir_parts: tuple[str, ...]) -> bool:
+    def _is_dir_ignored(self, dir_parts):
         """ Check if directory must be ignored.
 
         Parameters
@@ -182,7 +182,7 @@ class RepoMixfy:
 
         return False
 
-    def _is_file_ignored(self, rel_path: Path) -> bool:
+    def _is_file_ignored(self, rel_path):
         """ Check if file path must be ignored.
 
         Parameters
@@ -246,7 +246,7 @@ class RepoMixfy:
 
         return False
 
-    def _init_outputs(self, force_write: bool) -> None:
+    def _init_outputs(self, force_write):
         """ Initialize output directory state.
 
         Parameters
@@ -269,7 +269,7 @@ class RepoMixfy:
                 )
                 sys.exit(0)
 
-    def _init_files(self, case_sensitive_ext: bool) -> None:
+    def _init_files(self, case_sensitive_ext):
         """ Scan repository files and write list of non-ignored files.
 
         Parameters
@@ -348,12 +348,7 @@ class RepoMixfy:
                 f"{self._ignored_path}"
             )
 
-    def _format_file_block(
-            self,
-            rel_str: str,
-            file_path: Path,
-            fence_val: Any
-        ) -> str | None:
+    def _format_file_block(self, rel_str, file_path, fence_val):
         """ Format a single source file into a markdown fenced block.
 
         Parameters
@@ -403,7 +398,7 @@ class RepoMixfy:
 
         return f"## File: {rel_str}\n\n{processed}\n\n"
 
-    def _process_files(self) -> None:
+    def _process_files(self):
         """ Process all listed files into chunked markdown files. """
         if not self._repomixfy_path.exists():
             logging.warning(
@@ -471,14 +466,31 @@ class RepoMixfy:
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> Self:
-        """ Create a RepoMixfy instance from a YAML configuration file. """
+        """ Create a RepoMixfy instance from a YAML configuration file.
+
+        Parameters
+        ----------
+        config_path : str or Path
+            Path to the YAML configuration file.
+
+        Returns
+        -------
+        RepoMixfy
+            Initialized RepoMixfy instance.
+        """
         path = Path(config_path).resolve()
         kwargs = load_yaml(path, "repomixfy")
         return cls(**kwargs, base_dir=path.parent)
 
 
 def main(cli_args: list[str] | None = None) -> None:
-    """ Main entry point for the remixfy CLI. """
+    """ Main entry point for the remixfy CLI.
+
+    Parameters
+    ----------
+    cli_args : list of str, optional
+        Command line arguments list.
+    """
     parser = ArgumentParser(
         description = "Remixfy repository content extractor."
     )
@@ -491,3 +503,4 @@ def main(cli_args: list[str] | None = None) -> None:
     args = parser.parse_args(cli_args)
 
     RepoMixfy.from_yaml(args.config)
+

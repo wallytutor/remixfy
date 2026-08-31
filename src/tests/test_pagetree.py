@@ -11,9 +11,11 @@ from remixfy.repomixfy import main as repomixfy_main
 
 
 class MockResponse:
-    def __init__(self, content: bytes, status_code: int = 200):
+    def __init__(self, content: bytes, status_code: int = 200, url: str = ""):
         self.content = content
         self.status_code = status_code
+        self.url = url
+
 
 
 def test_repomixfy_from_yaml(tmp_path):
@@ -203,8 +205,9 @@ def test_pagetree_networkx_graph(tmp_path):
             force_write=True,
         )
 
-    graph_file = out_dir / "pagetree.graphml"
+    graph_file = out_dir / "_pagetree.graphml"
     assert graph_file.exists()
+
 
     graph = nx.read_graphml(graph_file)
     assert "http://test.local/start.html" in graph.nodes
@@ -335,11 +338,14 @@ def test_pagetree_concatenate(tmp_path):
 
     concat_file = out_dir / "_pagetree.md"
     assert concat_file.exists()
+    assert not (out_dir / "first.md").exists()
+    assert not (out_dir / "second.md").exists()
     content = concat_file.read_text(encoding="utf-8")
     assert "<!-- http://test.local/first.html -->" in content
     assert "First Page" in content
     assert "<!-- http://test.local/second.html -->" in content
     assert "Second Page" in content
+
 
 
 def test_pagetree_skip_classes_and_ids(tmp_path):
@@ -406,6 +412,36 @@ def test_pagetree_whitespace_cleanup(tmp_path):
     assert "\n\n\n" not in content
     assert "Line 1" in content
     assert "Line 2" in content
+
+
+def test_pagetree_url_canonicalization(tmp_path):
+    seed_url = "http://test.local/apps"
+    parent_url = "http://test.local/"
+
+    responses = {
+        "http://test.local/apps": MockResponse(b'<html><body><a href="apps/">Slash App</a><a href="apps#sec">Hash App</a></body></html>'),
+    }
+
+    def mock_get(url, **kwargs):
+        return responses.get(url, MockResponse(b"", 404))
+
+    out_dir = tmp_path / "canon_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    apps_file = out_dir / "apps.md"
+    assert apps_file.exists()
+    assert not (out_dir / "apps" / "index.md").exists()
+    assert len(pt._retrieved_urls) == 1
+
 
 
 

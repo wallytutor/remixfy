@@ -91,7 +91,18 @@ def resolve_output_dir(
 
 
 def get_domain_name(url: str) -> str:
-    """ Extract the domain name from a URL. """
+    """ Extract the domain name from a URL.
+
+    Parameters
+    ----------
+    url : str
+        URL string to parse.
+
+    Returns
+    -------
+    str
+        Sanitized domain name string.
+    """
     if not (parsed := urlparse(url)).netloc:
         return "web"
 
@@ -169,7 +180,7 @@ def is_text_file(
     ----------
     file_path : str or Path
         Path to the file to inspect.
-    chunk_size : int, default=1024
+    chunk_size : int = 1024
         Number of bytes to read for text detection.
 
     Returns
@@ -191,7 +202,10 @@ def is_text_file(
         return False
 
 
-def get_extensions(ignores, case_sensitive) -> set[str]:
+def get_extensions(
+        ignores: list[str] | set[str] | None,
+        case_sensitive: bool
+    ) -> set[str]:
     """ Normalize and filter a collection of file extension rules.
 
     Parameters
@@ -266,7 +280,20 @@ def clone_repository(
 
 
 def load_yaml(path: Path, tool: str) -> dict[str, Any]:
-    """ Load a YAML configuration file for a specific tool. """
+    """ Load a YAML configuration file for a specific tool.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the YAML configuration file.
+    tool : str
+        Tool section name to load from YAML.
+
+    Returns
+    -------
+    dict of str to Any
+        Configuration options dictionary for the specified tool.
+    """
     if not path.exists():
         raise FileNotFoundError(
             f"Configuration file not found: {path}"
@@ -288,3 +315,4 @@ def load_yaml(path: Path, tool: str) -> dict[str, Any]:
         )
 
     return kwargs
+

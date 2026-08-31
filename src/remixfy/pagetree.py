@@ -111,8 +111,10 @@ class PageTree:
             concatenate: bool = False,
             base_dir: str | Path | None = None,
         ) -> None:
-        self._url: str = url
-        self._parent: str | None = parent
+        self._url: str = self._normalize_url(url)
+        self._parent: str | None = (
+            self._normalize_url(parent) if parent else None
+        )
         self._relative_links: bool = relative_links
         self._force_write: bool = force_write
         self._max_depth: int = max_depth
@@ -144,7 +146,30 @@ class PageTree:
         self._init_outputs(force_write)
         self._crawl_pages()
 
-    def _init_outputs(self, force_write: bool) -> None:
+    def _normalize_url(self, url):
+        """ Normalize URL string by removing fragment and trailing slash.
+
+        Parameters
+        ----------
+        url : str
+            Raw URL string to normalize.
+
+        Returns
+        -------
+        str
+            Normalized URL string.
+        """
+        if not url:
+            return url
+        url, _ = urldefrag(url)
+        parsed = urlparse(url)
+        path = parsed.path
+        if path and path != "/" and path.endswith("/"):
+            path = path.rstrip("/")
+            url = parsed._replace(path=path).geturl()
+        return url
+
+    def _init_outputs(self, force_write):
         """ Initialize output directory state.
 
         Parameters
@@ -167,7 +192,7 @@ class PageTree:
                 )
                 sys.exit(0)
 
-    def _url_to_path(self, url: str) -> Path:
+    def _url_to_path(self, url):
         """ Map a URL to a sanitized relative local file path.
 
         Parameters
@@ -181,6 +206,7 @@ class PageTree:
             Absolute path within output_dir where the page content
             should be stored.
         """
+        url = self._normalize_url(url)
         parsed = urlparse(url)
         parent_str = self._parent or self._url
 
@@ -209,7 +235,7 @@ class PageTree:
 
         return self._output_dir.joinpath(*clean_parts)
 
-    def _record_retrieved(self, url: str) -> None:
+    def _record_retrieved(self, url):
         """ Write a retrieved URL to the .pagetree in append mode.
 
         Parameters
@@ -217,15 +243,15 @@ class PageTree:
         url : str
             Retrieved URL to record.
         """
-        if url in self._retrieved_urls:
-            # logging.info(f"Skipping already retrieved URL: {url}")
+        norm_url = self._normalize_url(url)
+        if norm_url in self._retrieved_urls:
             return
 
-        self._retrieved_urls.add(url.rstrip("/"))
+        self._retrieved_urls.add(norm_url)
         with self._pagetree_path.open("a", encoding="utf-8") as f:
-            f.write(f"{url}\n")
+            f.write(f"{norm_url}\n")
 
-    def _record_ignored(self, url: str) -> None:
+    def _record_ignored(self, url):
         """ Write an ignored URL to the .ignored in append mode.
 
         Parameters
@@ -233,18 +259,15 @@ class PageTree:
         url : str
             Ignored URL to record.
         """
-        if url in self._ignored_urls:
+        norm_url = self._normalize_url(url)
+        if norm_url in self._ignored_urls:
             return
 
-        self._ignored_urls.add(url)
+        self._ignored_urls.add(norm_url)
         with self._ignored_path.open("a", encoding="utf-8") as f:
-            f.write(f"{url}\n")
+            f.write(f"{norm_url}\n")
 
-    def _fetch_page(
-            self,
-            session: requests.Session,
-            current_url: str
-        ) -> requests.Response | None:
+    def _fetch_page(self, session, current_url):
         """ Fetch an HTTP resource using the current session.
 
         Parameters
@@ -261,25 +284,39 @@ class PageTree:
         """
         try:
             resp = session.get(current_url, timeout=15)
-
-            # Handle failure due to wrongfully added trailing slash:
-            if resp.status_code == 404 and current_url.endswith("/"):
-                content_url = current_url.rstrip("/")
-                resp = session.get(content_url, timeout=15)
+            raw_url = getattr(resp, "url", None) or current_url
+            final_url = self._normalize_url(raw_url)
 
             if resp.status_code != 200:
-                logging.warning(
-                    f"Failed to fetch {current_url} (HTTP status {resp.status_code})"
-                )
-                self._record_ignored(current_url)
-                return None
+                alt_url = current_url + "/" if not current_url.endswith("/") else current_url.rstrip("/")
+                resp_alt = session.get(alt_url, timeout=15)
+                if resp_alt.status_code == 200:
+                    resp = resp_alt
+                    raw_alt_url = getattr(resp, "url", None) or alt_url
+                    final_url = self._normalize_url(raw_alt_url)
+                else:
+                    logging.warning(
+                        f"Failed to fetch {current_url} (HTTP status {resp.status_code})"
+                    )
+                    self._record_ignored(current_url)
+                    return None
+
+            if final_url != current_url:
+                if final_url in self._retrieved_urls or final_url in self._visited_urls:
+                    logging.info(
+                        f"Skipping already retrieved redirected URL: {final_url}"
+                    )
+                    self._retrieved_urls.add(current_url)
+                    return None
+
             return resp
+
         except Exception as err:
             logging.warning(f"Failed to fetch {current_url}: {err}")
             self._record_ignored(current_url)
             return None
 
-    def _html_to_markdown(self, html_bytes: bytes) -> bytes:
+    def _html_to_markdown(self, html_bytes):
         """ Convert HTML bytes payload to Markdown format using Pandoc.
 
         Parameters
@@ -305,7 +342,7 @@ class PageTree:
             logging.warning(f"Pandoc markdown conversion failed: {err}")
             return html_bytes
 
-    def _clean_plain_html(self, soup: BeautifulSoup) -> None:
+    def _clean_plain_html(self, soup):
         """ Clean HTML structure.
 
         It performs the following steps:
@@ -349,7 +386,7 @@ class PageTree:
             if isinstance(node, NavigableString) and not node.strip():
                 node.extract()
 
-    def _filter_html(self, content: bytes) -> bytes:
+    def _filter_html(self, content):
         """ Filter HTML content.
 
         It performs the following steps:
@@ -439,7 +476,7 @@ class PageTree:
 
         return str(soup).encode("utf-8")
 
-    def _save_page(self, current_url: str, content: bytes) -> None:
+    def _save_page(self, current_url, content):
         """ Write page content to disk and record retrieved URL.
 
         Parameters
@@ -451,9 +488,12 @@ class PageTree:
         """
         self._graph.add_node(current_url)
         filtered_content = self._filter_html(content)
-        target_file = self._url_to_path(current_url)
-        target_file.parent.mkdir(parents=True, exist_ok=True)
-        target_file.write_bytes(filtered_content)
+
+        if not self._concatenate:
+            target_file = self._url_to_path(current_url)
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            target_file.write_bytes(filtered_content)
+
         self._record_retrieved(current_url)
 
         if self._concatenate:
@@ -462,13 +502,7 @@ class PageTree:
             with self._concat_path.open("a", encoding="utf-8") as f:
                 f.write(block)
 
-    def _process_link(
-            self,
-            current_url: str,
-            raw_href: str,
-            depth: int,
-            queue: collections.deque
-        ) -> None:
+    def _process_link(self, current_url, raw_href, depth, queue):
         """ Evaluate and process a single hyperlink extracted from a page.
 
         Parameters
@@ -499,7 +533,7 @@ class PageTree:
                 self._record_ignored(raw_href)
             return
 
-        resolved_url, _ = urldefrag(urljoin(current_url, raw_href))
+        resolved_url = self._normalize_url(urljoin(current_url, raw_href))
         parsed_target = urlparse(resolved_url)
 
         if parsed_target.scheme not in ("http", "https"):
@@ -509,16 +543,13 @@ class PageTree:
 
         self._graph.add_edge(current_url, resolved_url)
 
-        if self._parent and not resolved_url.startswith(self._parent):
+        parent_norm = self._parent or self._url
+        if parent_norm and not resolved_url.startswith(parent_norm):
             if resolved_url not in self._visited_urls:
                 self._record_ignored(resolved_url)
             return
 
-        if resolved_url in self._retrieved_urls:
-            # logging.info(f"Skipping already retrieved URL: {resolved_url}")
-            return
-
-        if resolved_url in self._visited_urls:
+        if resolved_url in self._retrieved_urls or resolved_url in self._visited_urls:
             return
 
         if depth + 1 > self._max_depth:
@@ -528,13 +559,7 @@ class PageTree:
         self._visited_urls.add(resolved_url)
         queue.append((resolved_url, depth + 1))
 
-    def _extract_links(
-            self,
-            current_url: str,
-            content: bytes,
-            depth: int,
-            queue: collections.deque
-        ) -> None:
+    def _extract_links(self, current_url, content, depth, queue):
         """ Extract all anchor links from HTML content and process them.
 
         Parameters
@@ -552,7 +577,7 @@ class PageTree:
         for a in soup.find_all("a", href=True):
             self._process_link(current_url, a["href"], depth, queue)
 
-    def _dump_graph(self) -> None:
+    def _dump_graph(self):
         """ Dump the networkx graph to a GraphML file. """
         nx.write_graphml(self._graph, self._graph_path)
         logging.info(
@@ -560,7 +585,7 @@ class PageTree:
             f"{self._graph.number_of_edges()} edges at {self._graph_path}"
         )
 
-    def _crawl_pages(self) -> None:
+    def _crawl_pages(self):
         """ Crawl starting from seed URL using BFS traversal. """
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -610,14 +635,31 @@ class PageTree:
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> Self:
-        """ Create a PageTree instance from a YAML configuration file. """
+        """ Create a PageTree instance from a YAML configuration file.
+
+        Parameters
+        ----------
+        config_path : str or Path
+            Path to the YAML configuration file.
+
+        Returns
+        -------
+        PageTree
+            Initialized PageTree instance.
+        """
         path = Path(config_path).resolve()
         kwargs = load_yaml(path, "pagetree")
         return cls(**kwargs, base_dir=path.parent)
 
 
 def main(cli_args: list[str] | None = None) -> None:
-    """ Main entry point for the pagetree CLI. """
+    """ Main entry point for the pagetree CLI.
+
+    Parameters
+    ----------
+    cli_args : list of str, optional
+        Command line arguments list.
+    """
     parser = ArgumentParser(
         description = "Remixfy web page crawler and retriever."
     )
@@ -630,3 +672,4 @@ def main(cli_args: list[str] | None = None) -> None:
     args = parser.parse_args(cli_args)
 
     PageTree.from_yaml(args.config)
+
