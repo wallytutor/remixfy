@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Self
 from urllib.parse import urljoin, urlparse, urldefrag
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 from .tools import resolve_output_dir, load_yaml
 
@@ -131,7 +131,7 @@ class PageTree:
         )
         self._pagetree_path: Path = self._output_dir / ".pagetree"
         self._ignored_path: Path = self._output_dir / ".ignored"
-        self._graph_path: Path = self._output_dir / "pagetree.graphml"
+        self._graph_path: Path = self._output_dir / "_pagetree.graphml"
 
         ext = "md" if convert_md else "html"
         self._concat_path: Path = self._output_dir / f"_pagetree.{ext}"
@@ -218,10 +218,10 @@ class PageTree:
             Retrieved URL to record.
         """
         if url in self._retrieved_urls:
-            logging.info(f"Skipping already retrieved URL: {url}")
+            # logging.info(f"Skipping already retrieved URL: {url}")
             return
 
-        self._retrieved_urls.add(url)
+        self._retrieved_urls.add(url.rstrip("/"))
         with self._pagetree_path.open("a", encoding="utf-8") as f:
             f.write(f"{url}\n")
 
@@ -262,6 +262,11 @@ class PageTree:
         try:
             resp = session.get(current_url, timeout=15)
 
+            # Handle failure due to wrongfully added trailing slash:
+            if resp.status_code == 404 and current_url.endswith("/"):
+                content_url = current_url.rstrip("/")
+                resp = session.get(content_url, timeout=15)
+
             if resp.status_code != 200:
                 logging.warning(
                     f"Failed to fetch {current_url} (HTTP status {resp.status_code})"
@@ -301,12 +306,13 @@ class PageTree:
             return html_bytes
 
     def _clean_plain_html(self, soup: BeautifulSoup) -> None:
-        """ Strip attributes and remove/unwrap elements.
+        """ Clean HTML structure.
 
         It performs the following steps:
-          - strip element attributes,
-          - remove empty tags,
-          - unwrap dangling div/span tags.
+        1. Removes all HTML tags (id, class, etc).
+        2. Removes all void tags (img, br, hr, input, source, wbr).
+        3. Removes all whitespace text strings.
+        4. Removes all container elements.
 
         Parameters
         ----------
@@ -320,6 +326,7 @@ class PageTree:
             tag.attrs = {}
 
         void_tags = {"img", "br", "hr", "input", "source", "wbr"}
+        to_find = ["div", "span", "section", "article", "main", "body", "html"]
 
         while True:
             removed_any = False
@@ -331,11 +338,16 @@ class PageTree:
                     ):
                         tag.decompose()
                         removed_any = True
+
             if not removed_any:
                 break
 
-        for tag in soup.find_all(["div", "span"]):
+        for tag in list(soup.find_all(to_find)):
             tag.unwrap()
+
+        for node in list(soup.find_all(string=True)):
+            if isinstance(node, NavigableString) and not node.strip():
+                node.extract()
 
     def _filter_html(self, content: bytes) -> bytes:
         """ Filter HTML content.
@@ -445,9 +457,8 @@ class PageTree:
         self._record_retrieved(current_url)
 
         if self._concatenate:
-            text = filtered_content.decode("utf-8", errors="replace")
+            text = filtered_content.decode("utf-8", errors="replace").strip()
             block = f"<!-- {current_url} -->\n\n{text}\n\n"
-
             with self._concat_path.open("a", encoding="utf-8") as f:
                 f.write(block)
 
@@ -504,7 +515,7 @@ class PageTree:
             return
 
         if resolved_url in self._retrieved_urls:
-            logging.info(f"Skipping already retrieved URL: {resolved_url}")
+            # logging.info(f"Skipping already retrieved URL: {resolved_url}")
             return
 
         if resolved_url in self._visited_urls:
@@ -568,7 +579,7 @@ class PageTree:
             current_url, depth = queue.popleft()
 
             if current_url in self._retrieved_urls:
-                logging.info(f"Skipping already retrieved URL: {current_url}")
+                # logging.info(f"Skipping already retrieved URL: {current_url}")
                 continue
 
             if self._request_delay > 0 and len(self._retrieved_urls) > 0:

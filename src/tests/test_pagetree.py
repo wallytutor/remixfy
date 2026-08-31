@@ -379,6 +379,36 @@ def test_pagetree_skip_classes_and_ids(tmp_path):
     assert "Crosslinks Nav" not in content
 
 
+def test_pagetree_whitespace_cleanup(tmp_path):
+    seed_url = "http://test.local/blank_lines.html"
+    parent_url = "http://test.local/"
+
+    raw_html = '<html><body><p>Line 1</p><p></p><p></p><p>Line 2</p></body></html>'
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "whitespace_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    md_file = out_dir / "blank_lines.md"
+    assert md_file.exists()
+    content = md_file.read_text(encoding="utf-8")
+    assert "\n\n\n" not in content
+    assert "Line 1" in content
+    assert "Line 2" in content
+
+
+
 
 
 
