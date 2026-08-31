@@ -36,6 +36,15 @@ pagetree:
     - footer
     - script
 
+  # Skip classes:
+  skip_classes:
+    - crosslinks
+    - widget_call_to_action
+
+  # Skip id's:
+  skip_ids:
+    - content-top
+
   # If true, convert pages to Markdown format using Pandoc.
   convert_md: true
 
@@ -46,5 +55,7 @@ pagetree:
 
   # If true, concatenate all pages into a single file in the order of
   # retrieval. The file is named _pagetree.<ext> (where <ext> is the
-  # output format: md or html depending on convert_md).
+  # output format: md or html depending on convert_md). A comment with
+  # the format <!-- {source-url} --> is added before the contents to
+  # keep files identifiable in the final file.
   concatenate: true

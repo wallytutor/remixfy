@@ -52,10 +52,16 @@ class PageTree:
         Tag specification to extract specific HTML content subtree.
     skip_tags : list of str, optional
         List of HTML tag names to remove before saving content.
+    skip_classes : list of str, optional
+        List of HTML class names to remove before saving content.
+    skip_ids : list of str, optional
+        List of HTML element IDs to remove before saving content.
     convert_md : bool, default=False
         If True, convert page output to Markdown format using Pandoc.
     plain_html : bool, default=False
         If True and convert_md is False, strip all HTML attributes.
+    concatenate : bool, default=False
+        If True, append all page contents into a single _pagetree.<ext> file.
     base_dir : str, Path, or None, optional
         Base directory to resolve relative output directory against.
     """
@@ -71,11 +77,15 @@ class PageTree:
         "_request_delay",
         "_parent_tag",
         "_skip_tags",
+        "_skip_classes",
+        "_skip_ids",
         "_convert_md",
         "_plain_html",
+        "_concatenate",
         "_pagetree_path",
         "_ignored_path",
         "_graph_path",
+        "_concat_path",
         "_retrieved_urls",
         "_ignored_urls",
         "_visited_urls",
@@ -94,8 +104,11 @@ class PageTree:
             request_delay: float | int = 1,
             parent_tag: dict | None = None,
             skip_tags: list[str] | None = None,
+            skip_classes: list[str] | None = None,
+            skip_ids: list[str] | None = None,
             convert_md: bool = False,
             plain_html: bool = False,
+            concatenate: bool = False,
             base_dir: str | Path | None = None,
         ) -> None:
         self._url: str = url
@@ -107,8 +120,11 @@ class PageTree:
         self._request_delay: float | int = request_delay
         self._parent_tag: dict | None = parent_tag
         self._skip_tags: list[str] | None = skip_tags
+        self._skip_classes: list[str] | None = skip_classes
+        self._skip_ids: list[str] | None = skip_ids
         self._convert_md: bool = convert_md
         self._plain_html: bool = plain_html
+        self._concatenate: bool = concatenate
 
         self._output_dir: Path = resolve_output_dir(
             output_dir, url=url, base=base_dir
@@ -116,6 +132,9 @@ class PageTree:
         self._pagetree_path: Path = self._output_dir / ".pagetree"
         self._ignored_path: Path = self._output_dir / ".ignored"
         self._graph_path: Path = self._output_dir / "pagetree.graphml"
+
+        ext = "md" if convert_md else "html"
+        self._concat_path: Path = self._output_dir / f"_pagetree.{ext}"
 
         self._retrieved_urls: set[str] = set()
         self._ignored_urls: set[str] = set()
@@ -318,13 +337,12 @@ class PageTree:
         for tag in soup.find_all(["div", "span"]):
             tag.unwrap()
 
-
     def _filter_html(self, content: bytes) -> bytes:
         """ Filter HTML content.
 
         It performs the following steps:
-          - stripping skip_tags,
           - extracting parent_tag,
+          - stripping skip_tags, skip_classes, skip_ids,
           - optionally converting to Markdown or plain HTML.
 
         Parameters
@@ -340,6 +358,8 @@ class PageTree:
         if (
             not self._parent_tag
             and not self._skip_tags
+            and not self._skip_classes
+            and not self._skip_ids
             and not self._convert_md
             and not self._plain_html
         ):
@@ -350,12 +370,6 @@ class PageTree:
         except Exception as err:
             logging.warning(f"Failed to parse HTML for filtering: {err}")
             return content
-
-        if self._skip_tags:
-            for tag_name in self._skip_tags:
-                if tag_name:
-                    for elem in soup.find_all(tag_name):
-                        elem.decompose()
 
         if self._parent_tag and isinstance(self._parent_tag, dict):
             tag_name = self._parent_tag.get("tag_name")
@@ -383,6 +397,27 @@ class PageTree:
                     f"Parent tag specification {self._parent_tag} not found"
                 )
 
+        if self._skip_tags:
+            for tag_name in self._skip_tags:
+                if tag_name:
+                    for elem in soup.find_all(tag_name.strip()):
+                        elem.decompose()
+
+        if self._skip_classes:
+            for cls_name in self._skip_classes:
+                if cls_name:
+                    clean_cls = cls_name.strip()
+                    for elem in soup.find_all(class_=clean_cls):
+                        elem.decompose()
+
+        if self._skip_ids:
+            for id_name in self._skip_ids:
+                if id_name:
+                    clean_id = id_name.strip()
+                    pattern = re.compile(rf"^\s*{re.escape(clean_id)}\s*$")
+                    for elem in soup.find_all(id=pattern):
+                        elem.decompose()
+
         if self._convert_md or self._plain_html:
             self._clean_plain_html(soup)
 
@@ -408,6 +443,13 @@ class PageTree:
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_bytes(filtered_content)
         self._record_retrieved(current_url)
+
+        if self._concatenate:
+            text = filtered_content.decode("utf-8", errors="replace")
+            block = f"<!-- {current_url} -->\n\n{text}\n\n"
+
+            with self._concat_path.open("a", encoding="utf-8") as f:
+                f.write(block)
 
     def _process_link(
             self,
@@ -549,6 +591,10 @@ class PageTree:
             f"Created .ignored with {len(self._ignored_urls)} URLs at "
             f"{self._ignored_path}"
         )
+        if self._concatenate and self._concat_path.exists():
+            logging.info(
+                f"Created concatenated file at {self._concat_path}"
+            )
         self._dump_graph()
 
     @classmethod

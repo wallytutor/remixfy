@@ -308,5 +308,78 @@ def test_pagetree_dangling_div_cleanup(tmp_path):
     assert "div" not in content
 
 
+def test_pagetree_concatenate(tmp_path):
+    seed_url = "http://test.local/first.html"
+    parent_url = "http://test.local/"
+
+    responses = {
+        "http://test.local/first.html": MockResponse(b'<html><body><a href="second.html">Next</a><h1>First Page</h1></body></html>'),
+        "http://test.local/second.html": MockResponse(b'<html><body><h1>Second Page</h1></body></html>'),
+    }
+
+    def mock_get(url, **kwargs):
+        return responses.get(url, MockResponse(b"", 404))
+
+    out_dir = tmp_path / "concat_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=True,
+            concatenate=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    concat_file = out_dir / "_pagetree.md"
+    assert concat_file.exists()
+    content = concat_file.read_text(encoding="utf-8")
+    assert "<!-- http://test.local/first.html -->" in content
+    assert "First Page" in content
+    assert "<!-- http://test.local/second.html -->" in content
+    assert "Second Page" in content
+
+
+def test_pagetree_skip_classes_and_ids(tmp_path):
+    seed_url = "http://test.local/filter.html"
+    parent_url = "http://test.local/"
+
+    raw_html = (
+        '<html><body>'
+        '<div id="content-top">Top Content</div>'
+        '<div class="crosslinks">Crosslinks Nav</div>'
+        '<div class="main-body"><p>Keep Me</p></div>'
+        '</body></html>'
+    )
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "skip_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            skip_classes=["crosslinks"],
+            skip_ids=["content-top"],
+            convert_md=False,
+            request_delay=0,
+            force_write=True,
+        )
+
+    html_file = out_dir / "filter.html"
+    assert html_file.exists()
+    content = html_file.read_text(encoding="utf-8")
+    assert "Keep Me" in content
+    assert "Top Content" not in content
+    assert "Crosslinks Nav" not in content
+
+
+
+
 
 
