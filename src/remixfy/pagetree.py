@@ -92,8 +92,8 @@ class PageTree:
         self._pagetree_path: Path = self._output_dir / ".pagetree"
         self._ignored_path: Path = self._output_dir / ".ignored"
 
-        self._retrieved_urls: list[str] = []
-        self._ignored_urls: list[str] = []
+        self._retrieved_urls: set[str] = set()
+        self._ignored_urls: set[str] = set()
         self._visited_urls: set[str] = set()
 
         self._init_outputs(force_write)
@@ -158,6 +158,174 @@ class PageTree:
 
         return self._output_dir.joinpath(*clean_parts)
 
+    def _record_retrieved(self, url: str) -> None:
+        """ Write a retrieved URL to the .pagetree in append mode.
+
+        Parameters
+        ----------
+        url : str
+            Retrieved URL to record.
+        """
+        if url in self._retrieved_urls:
+            logging.info(f"Skipping already retrieved URL: {url}")
+            return
+
+        self._retrieved_urls.add(url)
+        with self._pagetree_path.open("a", encoding="utf-8") as f:
+            f.write(f"{url}\n")
+
+    def _record_ignored(self, url: str) -> None:
+        """ Write an ignored URL to the .ignored in append mode.
+
+        Parameters
+        ----------
+        url : str
+            Ignored URL to record.
+        """
+        if url in self._ignored_urls:
+            return
+
+        self._ignored_urls.add(url)
+        with self._ignored_path.open("a", encoding="utf-8") as f:
+            f.write(f"{url}\n")
+
+    def _fetch_page(
+            self,
+            session: requests.Session,
+            current_url: str
+        ) -> requests.Response | None:
+        """ Fetch an HTTP resource using the current session.
+
+        Parameters
+        ----------
+        session : requests.Session
+            Active HTTP session instance.
+        current_url : str
+            Target URL to request.
+
+        Returns
+        -------
+        requests.Response or None
+            Response object if successful (HTTP 200), None otherwise.
+        """
+        try:
+            resp = session.get(current_url, timeout=15)
+
+            if resp.status_code != 200:
+                logging.warning(
+                    f"Failed to fetch {current_url} (HTTP status {resp.status_code})"
+                )
+                self._record_ignored(current_url)
+                return None
+            return resp
+        except Exception as err:
+            logging.warning(f"Failed to fetch {current_url}: {err}")
+            self._record_ignored(current_url)
+            return None
+
+    def _save_page(self, current_url: str, content: bytes) -> None:
+        """ Write page content to disk and record retrieved URL.
+
+        Parameters
+        ----------
+        current_url : str
+            URL of the page being saved.
+        content : bytes
+            Binary response payload to save.
+        """
+        target_file = self._url_to_path(current_url)
+        target_file.parent.mkdir(parents=True, exist_ok=True)
+        target_file.write_bytes(content)
+        self._record_retrieved(current_url)
+
+    def _process_link(
+            self,
+            current_url: str,
+            raw_href: str,
+            depth: int,
+            queue: collections.deque
+        ) -> None:
+        """ Evaluate and process a single hyperlink extracted from a page.
+
+        Parameters
+        ----------
+        current_url : str
+            URL of the referring page.
+        raw_href : str
+            Raw href attribute string from an HTML anchor tag.
+        depth : int
+            Current depth of the referring page.
+        queue : collections.deque
+            BFS URL processing queue.
+        """
+        raw_href = raw_href.strip()
+        if (
+            not raw_href
+            or raw_href.startswith("#")
+            or raw_href.startswith("javascript:")
+            or raw_href.startswith("mailto:")
+        ):
+            return
+
+        parsed_href = urlparse(raw_href)
+        is_relative = not bool(parsed_href.scheme or parsed_href.netloc)
+
+        if is_relative and not self._relative_links:
+            if raw_href not in self._visited_urls:
+                self._record_ignored(raw_href)
+            return
+
+        resolved_url, _ = urldefrag(urljoin(current_url, raw_href))
+        parsed_target = urlparse(resolved_url)
+
+        if parsed_target.scheme not in ("http", "https"):
+            if resolved_url not in self._visited_urls:
+                self._record_ignored(resolved_url)
+            return
+
+        if self._parent and not resolved_url.startswith(self._parent):
+            if resolved_url not in self._visited_urls:
+                self._record_ignored(resolved_url)
+            return
+
+        if resolved_url in self._retrieved_urls:
+            logging.info(f"Skipping already retrieved URL: {resolved_url}")
+            return
+
+        if resolved_url in self._visited_urls:
+            return
+
+        if depth + 1 > self._max_depth:
+            self._record_ignored(resolved_url)
+            return
+
+        self._visited_urls.add(resolved_url)
+        queue.append((resolved_url, depth + 1))
+
+    def _extract_links(
+            self,
+            current_url: str,
+            content: bytes,
+            depth: int,
+            queue: collections.deque
+        ) -> None:
+        """ Extract all anchor links from HTML content and process them.
+
+        Parameters
+        ----------
+        current_url : str
+            URL of the page containing the HTML content.
+        content : bytes
+            Raw HTML payload.
+        depth : int
+            Current recursive crawling depth.
+        queue : collections.deque
+            BFS URL processing queue.
+        """
+        soup = BeautifulSoup(content, "html.parser")
+        for a in soup.find_all("a", href=True):
+            self._process_link(current_url, a["href"], depth, queue)
+
     def _crawl_pages(self) -> None:
         """ Crawl starting from seed URL using BFS traversal. """
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -167,84 +335,30 @@ class PageTree:
 
         session = requests.Session()
         session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) remixfy-pagetree/0.1.0"
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "remixfy-pagetree/0.1.0"
+            )
         })
 
         while queue and len(self._retrieved_urls) < self._max_pages:
             current_url, depth = queue.popleft()
 
+            if current_url in self._retrieved_urls:
+                logging.info(f"Skipping already retrieved URL: {current_url}")
+                continue
+
             if self._request_delay > 0 and len(self._retrieved_urls) > 0:
                 time.sleep(self._request_delay)
 
-            try:
-                resp = session.get(current_url, timeout=15)
-                if resp.status_code != 200:
-                    logging.warning(
-                        f"Failed to fetch {current_url} (HTTP status {resp.status_code})"
-                    )
-                    if current_url not in self._ignored_urls:
-                        self._ignored_urls.append(current_url)
-                    continue
-            except Exception as err:
-                logging.warning(f"Failed to fetch {current_url}: {err}")
-                if current_url not in self._ignored_urls:
-                    self._ignored_urls.append(current_url)
+            resp = self._fetch_page(session, current_url)
+            if resp is None:
                 continue
 
-            target_file = self._url_to_path(current_url)
-            target_file.parent.mkdir(parents=True, exist_ok=True)
-            target_file.write_bytes(resp.content)
+            self._save_page(current_url, resp.content)
 
-            self._retrieved_urls.append(current_url)
-
-            if depth >= self._max_depth:
-                continue
-
-            soup = BeautifulSoup(resp.content, "html.parser")
-            for a in soup.find_all("a", href=True):
-                raw_href = a["href"].strip()
-                if not raw_href or raw_href.startswith("#") or raw_href.startswith("javascript:") or raw_href.startswith("mailto:"):
-                    continue
-
-                parsed_href = urlparse(raw_href)
-                is_relative = not bool(parsed_href.scheme or parsed_href.netloc)
-
-                if is_relative and not self._relative_links:
-                    if raw_href not in self._ignored_urls and raw_href not in self._visited_urls:
-                        self._ignored_urls.append(raw_href)
-                    continue
-
-                resolved_url, _ = urldefrag(urljoin(current_url, raw_href))
-                parsed_target = urlparse(resolved_url)
-
-                if parsed_target.scheme not in ("http", "https"):
-                    if resolved_url not in self._ignored_urls and resolved_url not in self._visited_urls:
-                        self._ignored_urls.append(resolved_url)
-                    continue
-
-                if self._parent and not resolved_url.startswith(self._parent):
-                    if resolved_url not in self._ignored_urls and resolved_url not in self._visited_urls:
-                        self._ignored_urls.append(resolved_url)
-                    continue
-
-                if resolved_url in self._visited_urls:
-                    continue
-
-                if depth + 1 > self._max_depth:
-                    if resolved_url not in self._ignored_urls:
-                        self._ignored_urls.append(resolved_url)
-                    continue
-
-                self._visited_urls.add(resolved_url)
-                queue.append((resolved_url, depth + 1))
-
-        with self._pagetree_path.open("w", encoding="utf-8") as f:
-            for u in self._retrieved_urls:
-                f.write(f"{u}\n")
-
-        with self._ignored_path.open("w", encoding="utf-8") as f:
-            for u in self._ignored_urls:
-                f.write(f"{u}\n")
+            if depth < self._max_depth:
+                self._extract_links(current_url, resp.content, depth, queue)
 
         logging.info(
             f"Created .pagetree with {len(self._retrieved_urls)} URLs at "
