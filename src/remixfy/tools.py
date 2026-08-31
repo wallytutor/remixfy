@@ -4,6 +4,7 @@ import logging
 import subprocess
 
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 def resolve_repo_dir(
@@ -72,10 +73,26 @@ def resolve_output_dir(
     if not output_dir and not url:
         raise ValueError("Must provide output_dir or url")
 
-    output_dir = output_dir or f"{repository_name(url)}_mix"
+    if not output_dir:
+        if url and url.endswith(".git"):
+            output_dir = f"{repository_name(url)}_mix"
+        elif url:
+            domain_name = get_domain_name(url)
+            output_dir = f"{domain_name}_mix"
+        else:
+            output_dir = "output_mix"
+
     output_dir = resolve_dir(output_dir, base=base)
     logging.info(f"Output at {output_dir}")
     return output_dir
+
+
+def get_domain_name(url: str) -> str:
+    """ Extract the domain name from a URL. """
+    if not (parsed := urlparse(url)).netloc:
+        return "web"
+
+    return parsed.netloc.replace(":", "_").replace(".", "_")
 
 
 def resolve_dir(

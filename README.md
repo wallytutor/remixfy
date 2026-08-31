@@ -102,7 +102,9 @@ repomixfy:
 
 ### `pagetree`
 
-*WiP*
+```bash
+uv run pagetree --config '<path/to/repo.yaml>'
+```
 
 ## 📃 To-Do
 

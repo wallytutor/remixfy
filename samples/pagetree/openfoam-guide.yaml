@@ -1,7 +1,23 @@
 pagetree:
+  # The base URL where we start the scraping:
   url: https://doc.cfd.direct/openfoam/user-guide-v13/contents
+
+  # The domain under which links should be confined: only absolute
+  # links living under this domain/URL are going to be fetched. If
+  # relative_links == true, then only those found to live under this
+  # parent URL are retrieved.
   parent: https://doc.cfd.direct/openfoam/user-guide-v13/
 
+  # If true, scrape relative links too, following the rules of parent.
   relative_links: true
+
+  # Directory under which the scraped content is going to be written.
   output_dir: openfoam-guide-v13_mix
+
+  # If true, overwrite existing files.
   force_write: true
+
+  # Limits for the scraping process:
+  max_depth: 5
+  max_pages: 1000
+  request_delay: 1
