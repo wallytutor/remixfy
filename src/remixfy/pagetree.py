@@ -9,15 +9,14 @@ import time
 
 import requests
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from pathlib import Path
-from typing import Any
+from typing import Self
 from urllib.parse import urljoin, urlparse, urldefrag
 
 from bs4 import BeautifulSoup
-from ruamel.yaml import YAML
 
-from .tools import resolve_output_dir
+from .tools import resolve_output_dir, load_yaml
 
 logging.basicConfig(
     stream = sys.stdout,
@@ -257,29 +256,10 @@ class PageTree:
         )
 
     @classmethod
-    def from_yaml(cls, config_path: str | Path) -> "PageTree":
+    def from_yaml(cls, config_path: str | Path) -> Self:
         """ Create a PageTree instance from a YAML configuration file. """
         path = Path(config_path).resolve()
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {path}"
-            )
-
-        yaml = YAML(typ="safe")
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.load(f)
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"Invalid YAML configuration format in {path}"
-            )
-
-        kwargs = data.get("pagetree", data)
-        if not isinstance(kwargs, dict):
-            raise ValueError(
-                f"Invalid 'pagetree' configuration block in {path}"
-            )
-
+        kwargs = load_yaml(path, "pagetree")
         return cls(**kwargs, base_dir=path.parent)
 
 

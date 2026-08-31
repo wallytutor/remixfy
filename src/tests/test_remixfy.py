@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from remixfy import RepoMixfy, main
+from remixfy.repomixfy import RepoMixfy, main
 from remixfy.tools import repository_name
 
 
@@ -162,4 +162,3 @@ def test_is_file_ignored():
     # Anchored file rule ./root_only.txt
     assert mix._is_file_ignored(Path("root_only.txt")) is True
     assert mix._is_file_ignored(Path("sub/root_only.txt")) is False
-

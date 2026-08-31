@@ -4,7 +4,10 @@ import logging
 import subprocess
 
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
+
+from ruamel.yaml import YAML
 
 
 def resolve_repo_dir(
@@ -260,3 +263,28 @@ def clone_repository(
         cmd.append(str(repo_dir))
 
     subprocess.run(cmd, check=True, capture_output=True)
+
+
+def load_yaml(path: Path, tool: str) -> dict[str, Any]:
+    """ Load a YAML configuration file for a specific tool. """
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Configuration file not found: {path}"
+        )
+
+    with path.open("r", encoding="utf-8") as f:
+        data = YAML(typ="safe").load(f)
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Invalid YAML configuration format in {path}"
+        )
+
+    kwargs = data.get(tool, data)
+
+    if not isinstance(kwargs, dict):
+        raise ValueError(
+            f"Invalid '{tool}' configuration block in {path}"
+        )
+
+    return kwargs

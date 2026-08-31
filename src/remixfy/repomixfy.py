@@ -7,11 +7,9 @@ import os
 import shutil
 import sys
 
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser
 from pathlib import Path
-from typing import Any
-
-from ruamel.yaml import YAML
+from typing import Any, Self
 
 from .tools import (
     clone_repository,
@@ -19,6 +17,7 @@ from .tools import (
     is_text_file,
     resolve_repo_dir,
     resolve_output_dir,
+    load_yaml,
 )
 
 logging.basicConfig(
@@ -471,29 +470,10 @@ class RepoMixfy:
         )
 
     @classmethod
-    def from_yaml(cls, config_path: str | Path) -> "RepoMixfy":
+    def from_yaml(cls, config_path: str | Path) -> Self:
         """ Create a RepoMixfy instance from a YAML configuration file. """
         path = Path(config_path).resolve()
-        if not path.exists():
-            raise FileNotFoundError(
-                f"Configuration file not found: {path}"
-            )
-
-        yaml = YAML(typ="safe")
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.load(f)
-
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"Invalid YAML configuration format in {path}"
-            )
-
-        kwargs = data.get("repomixfy", data)
-        if not isinstance(kwargs, dict):
-            raise ValueError(
-                f"Invalid 'repomixfy' configuration block in {path}"
-            )
-
+        kwargs = load_yaml(path, "repomixfy")
         return cls(**kwargs, base_dir=path.parent)
 
 
