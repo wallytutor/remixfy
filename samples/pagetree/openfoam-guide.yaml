@@ -35,3 +35,11 @@ pagetree:
     - header
     - footer
     - script
+
+  # If true, convert pages to Markdown format using Pandoc.
+  convert_md: true
+
+  # If true, then pages are stripped of all HTML tags (id, class, etc)
+  # so that a minimalistic document is produced. It is ignored if
+  # convert_md is set to true (single output format).
+  plain_html: false

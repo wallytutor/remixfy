@@ -4,9 +4,11 @@ import collections
 import logging
 import re
 import shutil
+import subprocess
 import sys
 import time
 
+import networkx as nx
 import requests
 
 from argparse import ArgumentParser
@@ -46,6 +48,14 @@ class PageTree:
         Maximum total number of pages to retrieve.
     request_delay : float or int, default=1
         Delay in seconds between consecutive HTTP requests.
+    parent_tag : dict, optional
+        Tag specification to extract specific HTML content subtree.
+    skip_tags : list of str, optional
+        List of HTML tag names to remove before saving content.
+    convert_md : bool, default=False
+        If True, convert page output to Markdown format using Pandoc.
+    plain_html : bool, default=False
+        If True and convert_md is False, strip all HTML attributes.
     base_dir : str, Path, or None, optional
         Base directory to resolve relative output directory against.
     """
@@ -61,11 +71,15 @@ class PageTree:
         "_request_delay",
         "_parent_tag",
         "_skip_tags",
+        "_convert_md",
+        "_plain_html",
         "_pagetree_path",
         "_ignored_path",
+        "_graph_path",
         "_retrieved_urls",
         "_ignored_urls",
         "_visited_urls",
+        "_graph",
     )
 
     def __init__(
@@ -80,6 +94,8 @@ class PageTree:
             request_delay: float | int = 1,
             parent_tag: dict | None = None,
             skip_tags: list[str] | None = None,
+            convert_md: bool = False,
+            plain_html: bool = False,
             base_dir: str | Path | None = None,
         ) -> None:
         self._url: str = url
@@ -91,16 +107,20 @@ class PageTree:
         self._request_delay: float | int = request_delay
         self._parent_tag: dict | None = parent_tag
         self._skip_tags: list[str] | None = skip_tags
+        self._convert_md: bool = convert_md
+        self._plain_html: bool = plain_html
 
         self._output_dir: Path = resolve_output_dir(
             output_dir, url=url, base=base_dir
         )
         self._pagetree_path: Path = self._output_dir / ".pagetree"
         self._ignored_path: Path = self._output_dir / ".ignored"
+        self._graph_path: Path = self._output_dir / "pagetree.graphml"
 
         self._retrieved_urls: set[str] = set()
         self._ignored_urls: set[str] = set()
         self._visited_urls: set[str] = set()
+        self._graph: nx.DiGraph = nx.DiGraph()
 
         self._init_outputs(force_write)
         self._crawl_pages()
@@ -152,10 +172,16 @@ class PageTree:
 
         rel_str = rel_str.split("?")[0].split("#")[0]
 
+        ext = ".md" if self._convert_md else ".html"
+
         if not rel_str or rel_str.endswith("/"):
-            rel_str += "index.html"
-        elif "." not in Path(rel_str).name:
-            rel_str += ".html"
+            rel_str += f"index{ext}"
+        else:
+            p = Path(rel_str)
+            if p.suffix.lower() in (".html", ".htm"):
+                rel_str = str(p.with_suffix(ext))
+            elif "." not in p.name:
+                rel_str += ext
 
         clean_parts = []
         for part in Path(rel_str).parts:
@@ -229,8 +255,52 @@ class PageTree:
             self._record_ignored(current_url)
             return None
 
+    def _html_to_markdown(self, html_bytes: bytes) -> bytes:
+        """ Convert HTML bytes payload to Markdown format using Pandoc.
+
+        Parameters
+        ----------
+        html_bytes : bytes
+            HTML payload bytes to convert.
+
+        Returns
+        -------
+        bytes
+            Converted Markdown content bytes.
+        """
+        try:
+            cmd = ["pandoc", "-f", "html", "-t", "gfm", "--wrap=none"]
+            res = subprocess.run(
+                cmd,
+                input=html_bytes,
+                capture_output=True,
+                check=True
+            )
+            return res.stdout
+        except (FileNotFoundError, subprocess.CalledProcessError) as err:
+            logging.warning(f"Pandoc markdown conversion failed: {err}")
+            return html_bytes
+
+    def _clean_plain_html(self, soup: BeautifulSoup) -> None:
+        """ Strip all element attributes and unwrap spans for clean plain HTML/markdown.
+
+        Parameters
+        ----------
+        soup : BeautifulSoup
+            Parsed HTML tree to clean up.
+        """
+        if not hasattr(soup, "find_all"):
+            return
+
+        for tag in soup.find_all(True):
+            tag.attrs = {}
+
+        for span in soup.find_all("span"):
+            span.unwrap()
+
     def _filter_html(self, content: bytes) -> bytes:
-        """ Filter HTML content by removing skip_tags and extracting parent_tag.
+        """ Filter HTML content by stripping skip_tags, extracting parent_tag,
+        and optionally converting to Markdown or plain HTML.
 
         Parameters
         ----------
@@ -240,9 +310,14 @@ class PageTree:
         Returns
         -------
         bytes
-            Filtered HTML content bytes.
+            Filtered content bytes (HTML or Markdown).
         """
-        if not self._parent_tag and not self._skip_tags:
+        if (
+            not self._parent_tag
+            and not self._skip_tags
+            and not self._convert_md
+            and not self._plain_html
+        ):
             return content
 
         try:
@@ -277,11 +352,18 @@ class PageTree:
                 elem = None
 
             if elem:
-                return str(elem).encode("utf-8")
+                soup = elem
+            else:
+                logging.warning(
+                    f"Parent tag specification {self._parent_tag} not found"
+                )
 
-            logging.warning(
-                f"Parent tag specification {self._parent_tag} not found"
-            )
+        if self._convert_md or self._plain_html:
+            self._clean_plain_html(soup)
+
+        if self._convert_md:
+            html_bytes = str(soup).encode("utf-8")
+            return self._html_to_markdown(html_bytes)
 
         return str(soup).encode("utf-8")
 
@@ -295,12 +377,12 @@ class PageTree:
         content : bytes
             Binary response payload to save.
         """
+        self._graph.add_node(current_url)
         filtered_content = self._filter_html(content)
         target_file = self._url_to_path(current_url)
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_bytes(filtered_content)
         self._record_retrieved(current_url)
-
 
     def _process_link(
             self,
@@ -347,6 +429,8 @@ class PageTree:
                 self._record_ignored(resolved_url)
             return
 
+        self._graph.add_edge(current_url, resolved_url)
+
         if self._parent and not resolved_url.startswith(self._parent):
             if resolved_url not in self._visited_urls:
                 self._record_ignored(resolved_url)
@@ -390,6 +474,14 @@ class PageTree:
         for a in soup.find_all("a", href=True):
             self._process_link(current_url, a["href"], depth, queue)
 
+    def _dump_graph(self) -> None:
+        """ Dump the networkx graph to a GraphML file. """
+        nx.write_graphml(self._graph, self._graph_path)
+        logging.info(
+            f"Saved graph with {self._graph.number_of_nodes()} nodes and "
+            f"{self._graph.number_of_edges()} edges at {self._graph_path}"
+        )
+
     def _crawl_pages(self) -> None:
         """ Crawl starting from seed URL using BFS traversal. """
         self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -432,6 +524,7 @@ class PageTree:
             f"Created .ignored with {len(self._ignored_urls)} URLs at "
             f"{self._ignored_path}"
         )
+        self._dump_graph()
 
     @classmethod
     def from_yaml(cls, config_path: str | Path) -> Self:

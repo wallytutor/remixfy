@@ -176,3 +176,101 @@ def test_pagetree_html_filtering(tmp_path):
     assert "Footer info" not in content
     assert "var x = 1" not in content
 
+
+def test_pagetree_networkx_graph(tmp_path):
+    import networkx as nx
+
+    seed_url = "http://test.local/start.html"
+    parent_url = "http://test.local/"
+
+    responses = {
+        "http://test.local/start.html": MockResponse(b'<a href="pageA.html">A</a><a href="pageB.html">B</a>'),
+        "http://test.local/pageA.html": MockResponse(b'<a href="pageB.html">B</a>'),
+        "http://test.local/pageB.html": MockResponse(b'<p>End</p>'),
+    }
+
+    def mock_get(url, **kwargs):
+        return responses.get(url, MockResponse(b"", 404))
+
+    out_dir = tmp_path / "graph_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            request_delay=0,
+            force_write=True,
+        )
+
+    graph_file = out_dir / "pagetree.graphml"
+    assert graph_file.exists()
+
+    graph = nx.read_graphml(graph_file)
+    assert "http://test.local/start.html" in graph.nodes
+    assert "http://test.local/pageA.html" in graph.nodes
+    assert "http://test.local/pageB.html" in graph.nodes
+    assert graph.has_edge("http://test.local/start.html", "http://test.local/pageA.html")
+    assert graph.has_edge("http://test.local/start.html", "http://test.local/pageB.html")
+    assert graph.has_edge("http://test.local/pageA.html", "http://test.local/pageB.html")
+
+
+def test_pagetree_convert_md(tmp_path):
+    seed_url = "http://test.local/doc.html"
+    parent_url = "http://test.local/"
+
+    raw_html = '<html><body><h1>Pandoc Heading</h1><p>Markdown paragraph</p></body></html>'
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "md_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    md_file = out_dir / "doc.md"
+    assert md_file.exists()
+    content = md_file.read_text(encoding="utf-8")
+    assert "# Pandoc Heading" in content or "Pandoc Heading" in content
+
+
+def test_pagetree_plain_html(tmp_path):
+    seed_url = "http://test.local/page.html"
+    parent_url = "http://test.local/"
+
+    raw_html = '<html><body><div id="main" class="box" style="color:red"><h1>Plain Title</h1></div></body></html>'
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "plain_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=False,
+            plain_html=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    html_file = out_dir / "page.html"
+    assert html_file.exists()
+    content = html_file.read_text(encoding="utf-8")
+    assert "Plain Title" in content
+    assert 'id="main"' not in content
+    assert 'class="box"' not in content
+    assert 'style="color:red"' not in content
+
+
+
