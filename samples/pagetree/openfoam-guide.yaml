@@ -21,3 +21,17 @@ pagetree:
   max_depth: 5
   max_pages: 1000
   request_delay: 1
+
+  # Instead of writing the whole page contents, extract only what
+  # is found under this tag. If id or class is supplied (non-null),
+  # these are used to further filter the parent tag.
+  parent_tag:
+    tag_name: body
+    id: null
+    class: null
+
+  # Skip any tag whose tag name is in this list:
+  skip_tags:
+    - header
+    - footer
+    - script

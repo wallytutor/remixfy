@@ -59,6 +59,8 @@ class PageTree:
         "_max_depth",
         "_max_pages",
         "_request_delay",
+        "_parent_tag",
+        "_skip_tags",
         "_pagetree_path",
         "_ignored_path",
         "_retrieved_urls",
@@ -76,6 +78,8 @@ class PageTree:
             max_depth: int = 5,
             max_pages: int = 1000,
             request_delay: float | int = 1,
+            parent_tag: dict | None = None,
+            skip_tags: list[str] | None = None,
             base_dir: str | Path | None = None,
         ) -> None:
         self._url: str = url
@@ -85,6 +89,8 @@ class PageTree:
         self._max_depth: int = max_depth
         self._max_pages: int = max_pages
         self._request_delay: float | int = request_delay
+        self._parent_tag: dict | None = parent_tag
+        self._skip_tags: list[str] | None = skip_tags
 
         self._output_dir: Path = resolve_output_dir(
             output_dir, url=url, base=base_dir
@@ -223,6 +229,62 @@ class PageTree:
             self._record_ignored(current_url)
             return None
 
+    def _filter_html(self, content: bytes) -> bytes:
+        """ Filter HTML content by removing skip_tags and extracting parent_tag.
+
+        Parameters
+        ----------
+        content : bytes
+            Raw response content bytes.
+
+        Returns
+        -------
+        bytes
+            Filtered HTML content bytes.
+        """
+        if not self._parent_tag and not self._skip_tags:
+            return content
+
+        try:
+            soup = BeautifulSoup(content, "html.parser")
+        except Exception as err:
+            logging.warning(f"Failed to parse HTML for filtering: {err}")
+            return content
+
+        if self._skip_tags:
+            for tag_name in self._skip_tags:
+                if tag_name:
+                    for elem in soup.find_all(tag_name):
+                        elem.decompose()
+
+        if self._parent_tag and isinstance(self._parent_tag, dict):
+            tag_name = self._parent_tag.get("tag_name")
+            tag_id = self._parent_tag.get("id")
+            tag_class = self._parent_tag.get("class")
+
+            kwargs = {}
+
+            if tag_id:
+                kwargs["id"] = tag_id
+            if tag_class:
+                kwargs["class"] = tag_class
+
+            if tag_name:
+                elem = soup.find(tag_name, **kwargs)
+            elif kwargs:
+                elem = soup.find(attrs=kwargs)
+            else:
+                elem = None
+
+            if elem:
+                return str(elem).encode("utf-8")
+
+            logging.warning(
+                f"Parent tag specification {self._parent_tag} not found"
+            )
+
+        return str(soup).encode("utf-8")
+
     def _save_page(self, current_url: str, content: bytes) -> None:
         """ Write page content to disk and record retrieved URL.
 
@@ -233,10 +295,12 @@ class PageTree:
         content : bytes
             Binary response payload to save.
         """
+        filtered_content = self._filter_html(content)
         target_file = self._url_to_path(current_url)
         target_file.parent.mkdir(parents=True, exist_ok=True)
-        target_file.write_bytes(content)
+        target_file.write_bytes(filtered_content)
         self._record_retrieved(current_url)
+
 
     def _process_link(
             self,

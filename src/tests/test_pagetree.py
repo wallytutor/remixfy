@@ -134,3 +134,45 @@ def test_pagetree_max_depth(tmp_path):
     assert "http://test.local/index.html" in retrieved
     assert "http://test.local/level1.html" in retrieved
     assert "http://test.local/level2.html" not in retrieved
+
+
+def test_pagetree_html_filtering(tmp_path):
+    seed_url = "http://test.local/index.html"
+    parent_url = "http://test.local/"
+
+    raw_html = (
+        '<html>'
+        '<head><title>Test</title><script>var x = 1;</script></head>'
+        '<body>'
+        '<header><h1>Header</h1></header>'
+        '<main id="content"><h2>Main Content</h2><p>Hello world</p></main>'
+        '<footer>Footer info</footer>'
+        '</body>'
+        '</html>'
+    )
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "filter_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            parent_tag={"tag_name": "main", "id": "content"},
+            skip_tags=["header", "footer", "script"],
+            request_delay=0,
+            force_write=True,
+        )
+
+    saved_file = out_dir / "index.html"
+    assert saved_file.exists()
+    content = saved_file.read_text(encoding="utf-8")
+
+    assert "Main Content" in content
+    assert "Header" not in content
+    assert "Footer info" not in content
+    assert "var x = 1" not in content
+
