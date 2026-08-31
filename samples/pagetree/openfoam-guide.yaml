@@ -43,3 +43,8 @@ pagetree:
   # so that a minimalistic document is produced. It is ignored if
   # convert_md is set to true (single output format).
   plain_html: false
+
+  # If true, concatenate all pages into a single file in the order of
+  # retrieval. The file is named _pagetree.<ext> (where <ext> is the
+  # output format: md or html depending on convert_md).
+  concatenate: true

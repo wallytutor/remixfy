@@ -273,4 +273,40 @@ def test_pagetree_plain_html(tmp_path):
     assert 'style="color:red"' not in content
 
 
+def test_pagetree_dangling_div_cleanup(tmp_path):
+    seed_url = "http://test.local/dangling.html"
+    parent_url = "http://test.local/"
+
+    raw_html = (
+        '<html><body>'
+        '<div class="wrapper">'
+        '<div class="empty">   </div>'
+        '<div><p>Clean Paragraph</p></div>'
+        '</div>'
+        '</body></html>'
+    )
+
+    def mock_get(url, **kwargs):
+        return MockResponse(raw_html.encode("utf-8"))
+
+    out_dir = tmp_path / "dangling_test"
+
+    with patch("requests.Session.get", side_effect=mock_get):
+        pt = PageTree(
+            url=seed_url,
+            parent=parent_url,
+            output_dir=out_dir,
+            convert_md=True,
+            request_delay=0,
+            force_write=True,
+        )
+
+    md_file = out_dir / "dangling.md"
+    assert md_file.exists()
+    content = md_file.read_text(encoding="utf-8")
+    assert "Clean Paragraph" in content
+    assert "div" not in content
+
+
+
 

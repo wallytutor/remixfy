@@ -282,7 +282,12 @@ class PageTree:
             return html_bytes
 
     def _clean_plain_html(self, soup: BeautifulSoup) -> None:
-        """ Strip all element attributes and unwrap spans for clean plain HTML/markdown.
+        """ Strip attributes and remove/unwrap elements.
+
+        It performs the following steps:
+          - strip element attributes,
+          - remove empty tags,
+          - unwrap dangling div/span tags.
 
         Parameters
         ----------
@@ -295,12 +300,32 @@ class PageTree:
         for tag in soup.find_all(True):
             tag.attrs = {}
 
-        for span in soup.find_all("span"):
-            span.unwrap()
+        void_tags = {"img", "br", "hr", "input", "source", "wbr"}
+
+        while True:
+            removed_any = False
+            for tag in soup.find_all(True):
+                if tag.name not in void_tags:
+                    if (
+                        not tag.get_text(strip=True) and
+                        not tag.find_all(void_tags)
+                    ):
+                        tag.decompose()
+                        removed_any = True
+            if not removed_any:
+                break
+
+        for tag in soup.find_all(["div", "span"]):
+            tag.unwrap()
+
 
     def _filter_html(self, content: bytes) -> bytes:
-        """ Filter HTML content by stripping skip_tags, extracting parent_tag,
-        and optionally converting to Markdown or plain HTML.
+        """ Filter HTML content.
+
+        It performs the following steps:
+          - stripping skip_tags,
+          - extracting parent_tag,
+          - optionally converting to Markdown or plain HTML.
 
         Parameters
         ----------
